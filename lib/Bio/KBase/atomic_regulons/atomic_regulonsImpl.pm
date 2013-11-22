@@ -89,7 +89,7 @@ sub gather_from_strand {
 	}
 #	print STDERR "before going left ",&Dumper($cluster);
 	if ((($i-1) >= 0) && 
-	    (&corr($pegs_with_locs->[$i-1]->[0],$cluster,$values) >= 0.4) &&
+	    (&cc_corr($pegs_with_locs->[$i-1]->[0],$cluster,$values) >= 0.4) &&
 	    ($pegs_with_locs->[$i-1]->[1]->[0] eq $pegs_with_locs->[$i]->[1]->[0]) &&
 	    ($pegs_with_locs->[$i-1]->[1]->[1] > $pegs_with_locs->[$i-1]->[1]->[2]))
 	{
@@ -121,7 +121,7 @@ sub ok_in_runB {
     my($c2,$b2,$e2) = @$loc2;
     if ($c1 ne $c2) { return 0 }
     if ($b2 < $e2)  { return 0 }
-    if (! &corr($y->[0],$cluster,$values)) { return 0 }
+    if (! &cc_corr($y->[0],$cluster,$values)) { return 0 }
     return (abs($e1-$b2) < 200);
 }
 
@@ -134,11 +134,11 @@ sub ok_in_runF {
     my($c2,$b2,$e2) = @$loc2;
     if ($c1 ne $c2) { return 0 }
     if ($b2 > $e2)  { return 0 }
-    if (! &corr($y->[0],$cluster,$values)) { return 0 }
+    if (! &cc_corr($y->[0],$cluster,$values)) { return 0 }
     return (abs($b2-$e1) < 200);
 }
 
-sub corr {
+sub cc_corr {
     my($peg1,$cluster,$values) = @_;
 
     my $sum = 0;
@@ -172,6 +172,143 @@ sub flip {
 	push(@$flipped,[$peg,$loc1]);
     }
     return $flipped;
+}
+
+# subs from ex_get_subsystem_based_estimates.pl
+
+sub split_on_pc {
+    my($pegs,$values) = @_;
+
+    my @sets = ();
+    my %used;
+    my $i;
+    for ($i=0; ($i < (@$pegs - 1)); $i++)
+    {
+	if (! $used{$pegs->[$i]})
+	{
+	    my @poss = ($pegs->[$i]);
+	    my $j;
+	    for ($j=$i+1; ($j < @$pegs); $j++)
+	    {
+		if (&ss_corr($pegs->[$j],\@poss,$values))
+		{
+		    push(@poss,$pegs->[$j]);
+		    $used{$pegs->[$j]} = 1;
+		}
+	    }
+	    push(@sets,\@poss);
+	}
+    }
+    return @sets;
+}
+
+sub ss_corr {
+    my($peg1,$cluster,$values) = @_;
+
+    my $sum = 0;
+    foreach my $peg2 (@$cluster)
+    {
+	my $v = correl_coef($values->{$peg1}, $values->{$peg2});
+	if ((! defined($v)) || ($v < 0.4)) { return 0 }
+	$sum += $v;
+    }
+    return (($sum / @$cluster) >= 0.7);
+}
+
+# subs from ex_make_initial_atomic_regulons.pl
+
+sub to_pvec {
+    my($exps,$pegs,$exp_peg_call) = @_;
+
+    my $pvecs = {};
+    foreach my $peg (@$pegs)
+    {
+	foreach my $exp (@$exps)
+	{
+	    push(@{$pvecs->{$peg}},$exp_peg_call->{$exp}->{$peg});
+	}
+    }
+    return $pvecs;
+}
+
+sub same_profile {
+    my($pvecsI,$pvecsJ) = @_;
+
+    my $i;
+    my $solid1_on = 0;
+    my $solid1_off = 0;
+    my $solid2_off = 0;
+    my $solid2_on = 0;
+
+    my $ok = 1;
+    for ($i=0; ($i < @$pvecsI) && $ok; $i++) 
+    {	
+	my $v1 = $pvecsI->[$i];
+	my $v2 = $pvecsJ->[$i];
+	$ok = &ok($v1,$v2);
+	if    ($v1 == 1)    { $solid1_on++ }
+	elsif ($v1 == -1)   { $solid1_off++ }
+	if    ($v2 == 1)    { $solid2_on++ }
+	elsif ($v2 == -1)   { $solid2_off++ }
+    }
+    return (($i == @$pvecsI) && 
+	    ($solid1_on  > (@$pvecsI * 0.2)) &&
+	    ($solid1_off > (@$pvecsI * 0.2)) &&
+	    ($solid2_on  > (@$pvecsI * 0.2)) &&
+	    ($solid2_off > (@$pvecsJ * 0.2)));
+}
+
+sub ok {
+    my($x,$y) = @_;
+
+    return (($x == $y) || ($x == 0) || ($y == 0));
+}
+
+sub cluster_objects {
+    my %to_cluster;
+    my %in_cluster;
+
+    my $nxt = 1;
+    while (defined(my $input = shift @_))
+    {
+	foreach my $set (@$input) {
+	    for (my $i = 0; $i < @$set - 1; $i++)
+	    {
+		my $obj1 = $set->[$i];
+		my $obj2 = $set->[$i+1];
+		my $in1 = $to_cluster{$obj1};
+		my $in2 = $to_cluster{$obj2};
+
+		if (defined($in1) && defined($in2) && ($in1 != $in2))
+		{
+		    push(@{$in_cluster{$in1}},@{$in_cluster{$in2}});
+		    foreach $_ (@{$in_cluster{$in2}})
+		    {
+			$to_cluster{$_} = $in1;
+		    }
+		    delete $in_cluster{$in2};
+		}
+		elsif ((! defined($in1)) && defined($in2))
+		{
+		    push(@{$in_cluster{$in2}},$obj1);
+		    $to_cluster{$obj1} = $in2;
+		}
+		elsif ((! defined($in2)) && defined($in1))
+		{
+		    push(@{$in_cluster{$in1}},$obj2);
+		    $to_cluster{$obj2} = $in1;
+		}
+		elsif ((! defined($in1)) && (! defined($in2)))
+		{   
+		    $to_cluster{$obj1} = $to_cluster{$obj2} = $nxt;
+		    $in_cluster{$nxt} = [$obj1,$obj2];
+		    $nxt++;
+		}
+	    }
+	}
+    }
+
+    return \%in_cluster;
 }
 
 #END_HEADER
@@ -295,7 +432,7 @@ sub compute_atomic_regulons
 
     # get the features and roles for the genome
     my $csO = Bio::KBase::CDMI::CDMIClient->new_for_script();
-    my $featuresH = $csO->genomes_to_fids([$genome_id],["CDS"]);
+    my $featuresH = $csO->genomes_to_fids([$genome_id],["CDS","rna"]);
     my $rolesH = $csO->fids_to_roles($featuresH->{$genome_id});
 
     # compute chromosomal clusters 
@@ -304,7 +441,7 @@ sub compute_atomic_regulons
 	if (exists $expression_values->{"expression_vectors"}->{$fid}) {
 	    push @fids_with_values, $fid;
 	} else {
-	    print STDERR "No values for $fid\n";
+	    print STDERR "No expression values for $fid\n";
 	}
     }
     my $locH    = $csO->fids_to_locations(\@fids_with_values);
@@ -313,25 +450,13 @@ sub compute_atomic_regulons
                         map  { my($contig, $pos, $strand, $length) = @{$locH->{$_}->[0]};
 		           [$_,[$contig,$pos,($strand eq '+') ? ($pos+($length-1)) : ($pos -($length-1))]] }
                         keys(%$locH);      
-    my $clusters = &possible_clusters(\@fids_with_loc,$expression_values->{"expression_vectors"});
-
-    foreach my $cluster (@$clusters)
-    {
-	if (@$cluster > 1)
-	{
-	    my @pegs = sort { &SeedUtils::by_fig_id($a,$b) } @$cluster;
-#	    join(",",@pegs),"\tClusterOnChromosome:$pegs[0],$pegs[$#pegs]\n";
-	}
-    }
+    my $chromosomal_clusters = &possible_clusters(\@fids_with_loc,$expression_values->{"expression_vectors"});
 
     # compute subsystem clusters
-    my $genomeH = $sapO->genomes_to_subsystems( -ids => [$genome_id] );
-    my @subs = map { ($_->[1] =~ /^\*?(0|-1)$/) ? () : $_->[0] } @{$genomeH->{$genome_id}};
+    my $genomeH = $csO->genomes_to_subsystems( [$genome_id] );
+    my @subs = sort map { ($_->[0] =~ /^\*?(0|-1)$/) ? () : $_->[1] } @{$genomeH->{$genome_id}};
 
-    my $subH = $csO->ids_in_subsystems( -subsystems => \@subs,
-					-genome     => $genome_id);
-    my @subs = sort  keys %$subH;
-
+    my $ss_clusters = [];
     my %bad;
 
     foreach my $sub (@subs)
@@ -339,16 +464,23 @@ sub compute_atomic_regulons
 	my %pegs;
 	my @pegs;
 
-	my $sub_entry = $subH->{$sub};
+	my $subH = $csO->subsystems_to_fids( [$sub], [$genome_id]);
+	my $sub_entry = $subH->{$sub}->{$genome_id};
 	@pegs = ();
-	foreach my $role (keys(%$sub_entry))
+	foreach my $pair (@$sub_entry)
 	{
-	    my $pegs = $sub_entry->{$role};
-	    foreach $_ (@$pegs) { $pegs{$_} = 1 }
+	    my $pegs = $pair->[1];
+	    foreach my $peg (@$pegs) { 
+		if (exists $expression_values->{"expression_vectors"}->{$peg}) {
+		    $pegs{$peg} = 1;
+		} else {
+		    print STDERR "No expression values for $peg\n";
+		}
+	    }
 	}
 	@pegs = sort { &SeedUtils::by_fig_id($a,$b) } keys(%pegs);
-	
-	my @sets = grep { @$_ > 1 } split_on_pc(\@pegs,$corrH);
+
+	my @sets = grep { @$_ > 1 } split_on_pc(\@pegs,$expression_values->{"expression_vectors"});
 
 	if (@sets > ((@pegs + 2) / 3))
 	{
@@ -361,56 +493,199 @@ sub compute_atomic_regulons
 	    {
 		if (@$set > 1)
 		{
-		    print join(",",@$set),"\tInSubsystem:$sub\n";
+		    push @$ss_clusters, $set;
 		}
 	    }
 	}
     }
-foreach $_ (keys(%bad))
-{
-    print STDERR "bad subsystem\t$_\n";
-}
 
-sub split_on_pc {
-    my($pegs,$corrH) = @_;
-
-    my @sets = ();
-    my %used;
-    my $i;
-    for ($i=0; ($i < (@$pegs - 1)); $i++)
+    foreach $_ (keys(%bad))
     {
-	if (! $used{$pegs->[$i]})
-	{
-	    my @poss = ($pegs->[$i]);
-	    my $j;
-	    for ($j=$i+1; ($j < @$pegs); $j++)
-	    {
-		if (&corr($pegs->[$j],\@poss,$corrH))
-		{
-		    push(@poss,$pegs->[$j]);
-		    $used{$pegs->[$j]} = 1;
-		}
-	    }
-	    push(@sets,\@poss);
-	}
+	print STDERR "bad subsystem\t$_\n";
     }
-    return @sets;
-}
 
-sub corr {
-    my($peg1,$cluster,$corrH) = @_;
-
-    my $sum = 0;
-    foreach my $peg2 (@$cluster)
-    {
-	my $v = $corrH->{$peg1}->{$peg2};
-	if ((! defined($v)) || ($v < 0.4)) { return 0 }
-	$sum += $v;
-    }
-    return (($sum / @$cluster) >= 0.7);
-}
+    # code from ex_make_on_off_calls.pl
     
+    my $heredoc = <<END;
+Alanyl-tRNA synthetase (EC 6.1.1.7)
+Arginyl-tRNA synthetase (EC 6.1.1.19)
+Asparaginyl-tRNA synthetase (EC 6.1.1.22)
+Aspartyl-tRNA synthetase (EC 6.1.1.12)
+Cysteinyl-tRNA synthetase (EC 6.1.1.16)
+DNA-directed RNA polymerase alpha subunit (EC 2.7.7.6)
+DNA-directed RNA polymerase beta subunit (EC 2.7.7.6)
+DNA-directed RNA polymerase beta\' subunit (EC 2.7.7.6)
+DNA-directed RNA polymerase omega subunit (EC 2.7.7.6)
+Glutaminyl-tRNA synthetase (EC 6.1.1.18)
+Glutamyl-tRNA synthetase (EC 6.1.1.17)
+Glycyl-tRNA synthetase alpha chain (EC 6.1.1.14)
+Glycyl-tRNA synthetase beta chain (EC 6.1.1.14)
+Histidyl-tRNA synthetase (EC 6.1.1.21)
+Isoleucyl-tRNA synthetase (EC 6.1.1.5)
+Leucyl-tRNA synthetase (EC 6.1.1.4)
+LSU ribosomal protein L10p (P0)
+LSU ribosomal protein L11p (L12e)
+LSU ribosomal protein L13p (L13Ae)
+LSU ribosomal protein L14p (L23e)
+LSU ribosomal protein L15p (L27Ae)
+LSU ribosomal protein L16p (L10e)
+LSU ribosomal protein L17p
+LSU ribosomal protein L18p (L5e)
+LSU ribosomal protein L19p
+LSU ribosomal protein L1p (L10Ae)
+LSU ribosomal protein L20p
+LSU ribosomal protein L21p
+LSU ribosomal protein L22p (L17e)
+LSU ribosomal protein L23p (L23Ae)
+LSU ribosomal protein L24p (L26e)
+LSU ribosomal protein L25p
+LSU ribosomal protein L27p
+LSU ribosomal protein L28p
+LSU ribosomal protein L29p (L35e)
+LSU ribosomal protein L2p (L8e)
+LSU ribosomal protein L30p (L7e)
+LSU ribosomal protein L31p
+LSU ribosomal protein L32p
+LSU ribosomal protein L33p
+LSU ribosomal protein L34p
+LSU ribosomal protein L35p
+LSU ribosomal protein L36p
+LSU ribosomal protein L3p (L3e)
+LSU ribosomal protein L4p (L1e)
+LSU ribosomal protein L5p (L11e)
+LSU ribosomal protein L6p (L9e)
+LSU ribosomal protein L9p
+Lysyl-tRNA synthetase (class II) (EC 6.1.1.6)
+Methionyl-tRNA synthetase (EC 6.1.1.10)
+Phenylalanyl-tRNA synthetase alpha chain (EC 6.1.1.20)
+Phenylalanyl-tRNA synthetase beta chain (EC 6.1.1.20)
+Seryl-tRNA synthetase (EC 6.1.1.11)
+SSU ribosomal protein S10p (S20e)
+SSU ribosomal protein S11p (S14e)
+SSU ribosomal protein S12p (S23e)
+SSU ribosomal protein S13p (S18e)
+SSU ribosomal protein S15p (S13e)
+SSU ribosomal protein S16p
+SSU ribosomal protein S17p (S11e)
+SSU ribosomal protein S19p (S15e)
+SSU ribosomal protein S1p
+SSU ribosomal protein S20p
+SSU ribosomal protein S21p
+SSU ribosomal protein S2p (SAe)
+SSU ribosomal protein S3p (S3e)
+SSU ribosomal protein S4p (S9e)
+SSU ribosomal protein S5p (S2e)
+SSU ribosomal protein S6p
+SSU ribosomal protein S7p (S5e)
+SSU ribosomal protein S8p (S15Ae)
+SSU ribosomal protein S9p (S16e)
+Threonyl-tRNA synthetase (EC 6.1.1.3)
+Tryptophanyl-tRNA synthetase (EC 6.1.1.2) ## proteobacterial type
+Valyl-tRNA synthetase (EC 6.1.1.9)
+END
+    my %roles_always_on = map { $_ => 1 } split "\n", $heredoc;
 
+    my %pegs_always_on;
+
+    foreach my $fid (keys %$rolesH) {
+	foreach my $role (@{$rolesH->{$fid}}) {
+	    if (exists $roles_always_on{$role}) {
+		$pegs_always_on{$fid} = 1;
+		last;
+	    }
+	}
+    }
+
+    my %on_for_exp;
+    my %off_for_exp;
+    my %diff_by_exp;
+
+    my $locusH = $expression_values->{"expression_vectors"};
+    my $exp_counter = 0;
+
+    foreach my $exp (@{$expression_values->{"sample_names"}})
+    {
+	my @on_values = sort { $a <=> $b } 
+	                map { $pegs_always_on{$_} ? $locusH->{$_}->[$exp_counter] : () } keys(%$locusH);
+	my $I_10 = int(@on_values * 0.1);
+	my $on_threshold = $on_values[$I_10];
+	$on_for_exp{$exp} = $on_threshold;
+	my @not_on_values = sort { $a <=> $b } 
+            	            map { ((! $pegs_always_on{$_} ) && ($locusH->{$_}->[$exp_counter] < $on_threshold)) ? $locusH->{$_}->[$exp_counter] : () } 
+	                    keys(%$locusH);
+	my $I_80  = int(@not_on_values * 0.8);
+	my $off_threshold = $not_on_values[$I_80];
+
+	$off_for_exp{$exp} = $off_threshold;
+	$diff_by_exp{$exp} = $on_threshold - $off_threshold;
+
+	$exp_counter++;
+    }
+    my @diffs = sort { $a <=> $b } map { $diff_by_exp{$_} } keys(%diff_by_exp);
+    my $I_25  = int(@diffs * 0.25);
+    my $diff_threshold = $diffs[$I_25];
+    foreach my $exp (keys(%off_for_exp))
+    {
+	if (($on_for_exp{$exp} - $off_for_exp{$exp}) < $diff_threshold)
+	{
+	    $off_for_exp{$exp} = $on_for_exp{$exp} - $diff_threshold;
+	}
+    }
+
+    my %peg_on_off_by_exp;
+
+    $exp_counter = 0;
+
+    foreach my $exp (@{$expression_values->{"sample_names"}})
+    {
+	my $on_threshold = $on_for_exp{$exp};
+	my $off_threshold = $off_for_exp{$exp};
+
+	foreach my $peg (keys(%$locusH))
+	{
+	    my $v = $locusH->{$peg}->[$exp_counter];
+	    if ($v >= $on_threshold)
+	    {
+		$peg_on_off_by_exp{$exp}->{$peg} = 1;
+	    }
+	    elsif ($v <= $off_threshold)
+	    {
+		$peg_on_off_by_exp{$exp}->{$peg} = -1;
+	    }
+	    else
+	    {
+		$peg_on_off_by_exp{$exp}->{$peg} = 0;
+	    }
+	}
+
+	$exp_counter++;
+    }
+    
+    # code from ex_make_initial_atomic_regulons.pl
+
+    my @exp = sort keys(%peg_on_off_by_exp);
+    my @pegs = keys %{$expression_values->{"expression_vectors"}};
+    my $pvecs = &to_pvec(\@exp,\@pegs,\%peg_on_off_by_exp);
+
+    # compute fids with same on/off profiles
+    my $same_profile_clusters = [];
+
+    for (my $i=0; ($i < $#pegs); $i++)
+    {
+	my $pvecsI = $pvecs->{$pegs[$i]};
+
+	for (my $j=$i+1; ($j < @pegs); $j++)
+	{
+	    my $pvecsJ = $pvecs->{$pegs[$j]};
+	    if (&same_profile($pvecsI,$pvecsJ))
+	    {
+		push @$same_profile_clusters, [$pegs[$i],$pegs[$j]];
+	    }
+	}
+    }
+
+    my $merged_clusters = &cluster_objects($chromosomal_clusters, $ss_clusters, $same_profile_clusters);
+    print Dumper($merged_clusters);
 
     #END compute_atomic_regulons
     my @_bad_returns;

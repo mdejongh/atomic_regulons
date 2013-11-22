@@ -5,7 +5,7 @@ use Bio::KBase::CDMI::CDMIClient;
 
 my $genome_id = "kb|g.20403";
 my $csO = Bio::KBase::CDMI::CDMIClient->new_for_script();
-my $featuresH = $csO->genomes_to_fids([$genome_id],["CDS"]);
+my $featuresH = $csO->genomes_to_fids([$genome_id],["CDS","rna"]);
 my $sourceIdsH = $csO->get_entity_Feature($featuresH->{$genome_id},["source_id"]);
 my %peg2fid;
 
