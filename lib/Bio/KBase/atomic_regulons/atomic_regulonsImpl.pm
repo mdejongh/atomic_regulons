@@ -16,6 +16,164 @@ atomic_regulons
 =cut
 
 #BEGIN_HEADER
+use SeedUtils;
+use gjoseqlib;
+use Data::Dumper;
+use Bio::KBase::CDMI::CDMIClient;
+use Bio::KBase::Utilities::ScriptThing;
+use File::Temp qw /tempdir/;
+
+#-----------------------------------------------------------------------------
+#  $cc = correl_coef( \@x, \@y ) ; copied from gjostat
+#-----------------------------------------------------------------------------
+sub correl_coef
+{   
+    my ($xref, $yref) = @_;
+    (@$xref > 2) || return undef;
+    my (@x) = @$xref;
+    my (@y) = @$yref;
+    my $n = @x;
+
+    my ($xsum, $x2sum, $ysum, $y2sum, $xysum) = (0) x 5;
+    my ($i, $xi, $yi);
+
+    for ($i = 1; $i <= $n; $i++)
+    {
+	$xi = shift @x; $xsum += $xi; $x2sum += $xi*$xi;
+	$yi = shift @y; $ysum += $yi; $y2sum += $yi*$yi;
+	$xysum += $xi*$yi;
+    }
+
+    my $xsd = sqrt( ($x2sum - ($xsum*$xsum/$n)) / ($n - 1) );
+    my $ysd = sqrt( ($y2sum - ($ysum*$ysum/$n)) / ($n - 1) );
+    if (($xsd == 0) || ($ysd == 0)) { return undef }
+    ( $xysum - $xsum * $ysum / $n ) / ( $xsd * $ysd * ( $n - 1 ) );
+}
+
+# subs from ex_get_adjacency_based_estimates.pl
+
+sub possible_clusters {
+    my($pegs_with_locs,$values) = @_;
+
+    my $clusters = [];
+    &gather_from_strand($pegs_with_locs,$values,$clusters);
+    my $flipped = &flip($pegs_with_locs);
+    my @pegs_with_locR = sort { ($a->[1]->[0] cmp $b->[1]->[0]) or
+				    (($a->[1]->[1]+$a->[1]->[2]) <=> ($b->[1]->[1]+$b->[1]->[2]))
+                              }
+                         @$flipped;
+    &gather_from_strand(\@pegs_with_locR,$values,$clusters);
+    return $clusters;
+}
+
+sub gather_from_strand {
+    my($pegs_with_locs,$values,$clusters) = @_;
+
+    my $max = -1;
+    my $i;
+    while (($i = &next_to_try($max,$pegs_with_locs)) < (@$pegs_with_locs - 1))
+    {
+#	print STDERR "start grouping ",&Dumper($pegs_with_locs->[$i]);
+	my $peg = $pegs_with_locs->[$i]->[0];
+	my $cluster = [$peg];
+	$max = $i;
+	my $j;
+	for ($j=$i+1; 
+	     ($j < @$pegs_with_locs) && 
+	     &ok_in_runF($pegs_with_locs->[$j-1],$pegs_with_locs->[$j],$values,$cluster); 
+	     $j++)
+	{
+#	    print STDERR "adding ",&Dumper($pegs_with_locs->[$j]);
+	    push(@$cluster,$pegs_with_locs->[$j]->[0]);
+	    $max = $j;
+	}
+#	print STDERR "before going left ",&Dumper($cluster);
+	if ((($i-1) >= 0) && 
+	    (&corr($pegs_with_locs->[$i-1]->[0],$cluster,$values) >= 0.4) &&
+	    ($pegs_with_locs->[$i-1]->[1]->[0] eq $pegs_with_locs->[$i]->[1]->[0]) &&
+	    ($pegs_with_locs->[$i-1]->[1]->[1] > $pegs_with_locs->[$i-1]->[1]->[2]))
+	{
+#	    print STDERR "going left with ",&Dumper($pegs_with_locs->[$i-1]);
+	    push(@$cluster,$pegs_with_locs->[$i-1]->[0]);
+	    for ($j=$i-2; 
+	         ($j >= 0) && &ok_in_runB($pegs_with_locs->[$j+1],$pegs_with_locs->[$j],$values,$cluster); 
+		 $j--)
+	    {
+#		print STDERR "adding $pegs_with_locs->[$j]->[0]\n";
+		push(@$cluster,$pegs_with_locs->[$j]->[0]);
+	    }
+	}
+#	print STDERR "final cluster ",&Dumper($cluster); 
+	if (@$cluster > 1) 
+	{ 
+	    push(@$clusters,$cluster);
+#	    print STDERR "keeping ",join(",",@$cluster),"\n";
+	}
+    }
+}
+
+sub ok_in_runB {
+    my($x,$y,$values,$cluster) = @_;
+
+    my $loc1 = $x->[1];
+    my($c1,$b1,$e1) = @$loc1;
+    my $loc2 = $y->[1];
+    my($c2,$b2,$e2) = @$loc2;
+    if ($c1 ne $c2) { return 0 }
+    if ($b2 < $e2)  { return 0 }
+    if (! &corr($y->[0],$cluster,$values)) { return 0 }
+    return (abs($e1-$b2) < 200);
+}
+
+sub ok_in_runF {
+    my($x,$y,$values,$cluster) = @_;
+
+    my $loc1 = $x->[1];
+    my($c1,$b1,$e1) = @$loc1;
+    my $loc2 = $y->[1];
+    my($c2,$b2,$e2) = @$loc2;
+    if ($c1 ne $c2) { return 0 }
+    if ($b2 > $e2)  { return 0 }
+    if (! &corr($y->[0],$cluster,$values)) { return 0 }
+    return (abs($b2-$e1) < 200);
+}
+
+sub corr {
+    my($peg1,$cluster,$values) = @_;
+
+    my $sum = 0;
+    foreach my $peg2 (@$cluster)
+    {
+	my $v = correl_coef($values->{$peg1}, $values->{$peg2});
+	if ((! defined($v)) || ($v < 0.4)) { return 0 }
+	$sum += $v;
+    }
+    return (($sum / @$cluster) >= 0.6);
+}
+
+sub next_to_try {
+    my($max,$pegs_with_locs) = @_;
+    my $i;
+    for ($i=$max+1; ($i < @$pegs_with_locs) && 
+	          ($pegs_with_locs->[$i]->[1]->[1] > $pegs_with_locs->[$i]->[1]->[2]);
+	 $i++) {}
+    return $i;
+}
+
+sub flip {
+    my($pegs_with_locs) = @_;
+
+    my $flipped = [];
+    foreach my $x (@$pegs_with_locs)
+    {
+	my($peg,$loc) = @$x;
+	my($contig,$beg,$end) = @$loc;
+	my $loc1 = [$contig,100000000-$beg,100000000-$end];
+	push(@$flipped,[$peg,$loc1]);
+    }
+    return $flipped;
+}
+
 #END_HEADER
 
 sub new
@@ -25,6 +183,7 @@ sub new
     };
     bless $self, $class;
     #BEGIN_CONSTRUCTOR
+mkdir("/mnt/tmp");
     #END_CONSTRUCTOR
 
     if ($self->can('_init_instance'))
@@ -125,6 +284,134 @@ sub compute_atomic_regulons
     my $ctx = $Bio::KBase::atomic_regulons::Service::CallContext;
     my($atomic_regulons, $feature_calls, $ar_calls);
     #BEGIN compute_atomic_regulons
+
+    # initialize return values
+    $atomic_regulons = [];
+    $feature_calls = [];
+    $ar_calls = [];
+
+    # create a temporary directory for intermediate results
+#    my $dataD = tempdir ( DIR => "/mnt/tmp", CLEANUP => 0 );
+
+    # get the features and roles for the genome
+    my $csO = Bio::KBase::CDMI::CDMIClient->new_for_script();
+    my $featuresH = $csO->genomes_to_fids([$genome_id],["CDS"]);
+    my $rolesH = $csO->fids_to_roles($featuresH->{$genome_id});
+
+    # compute chromosomal clusters 
+    my @fids_with_values;
+    foreach my $fid (@{$featuresH->{$genome_id}}) {
+	if (exists $expression_values->{"expression_vectors"}->{$fid}) {
+	    push @fids_with_values, $fid;
+	} else {
+	    print STDERR "No values for $fid\n";
+	}
+    }
+    my $locH    = $csO->fids_to_locations(\@fids_with_values);
+    my @fids_with_loc = sort { ($a->[1]->[0] cmp $b->[1]->[0]) or
+				   (($a->[1]->[1]+$a->[1]->[2]) <=> ($b->[1]->[1]+$b->[1]->[2]))}
+                        map  { my($contig, $pos, $strand, $length) = @{$locH->{$_}->[0]};
+		           [$_,[$contig,$pos,($strand eq '+') ? ($pos+($length-1)) : ($pos -($length-1))]] }
+                        keys(%$locH);      
+    my $clusters = &possible_clusters(\@fids_with_loc,$expression_values->{"expression_vectors"});
+
+    foreach my $cluster (@$clusters)
+    {
+	if (@$cluster > 1)
+	{
+	    my @pegs = sort { &SeedUtils::by_fig_id($a,$b) } @$cluster;
+#	    join(",",@pegs),"\tClusterOnChromosome:$pegs[0],$pegs[$#pegs]\n";
+	}
+    }
+
+    # compute subsystem clusters
+    my $genomeH = $sapO->genomes_to_subsystems( -ids => [$genome_id] );
+    my @subs = map { ($_->[1] =~ /^\*?(0|-1)$/) ? () : $_->[0] } @{$genomeH->{$genome_id}};
+
+    my $subH = $csO->ids_in_subsystems( -subsystems => \@subs,
+					-genome     => $genome_id);
+    my @subs = sort  keys %$subH;
+
+    my %bad;
+
+    foreach my $sub (@subs)
+    {
+	my %pegs;
+	my @pegs;
+
+	my $sub_entry = $subH->{$sub};
+	@pegs = ();
+	foreach my $role (keys(%$sub_entry))
+	{
+	    my $pegs = $sub_entry->{$role};
+	    foreach $_ (@$pegs) { $pegs{$_} = 1 }
+	}
+	@pegs = sort { &SeedUtils::by_fig_id($a,$b) } keys(%pegs);
+	
+	my @sets = grep { @$_ > 1 } split_on_pc(\@pegs,$corrH);
+
+	if (@sets > ((@pegs + 2) / 3))
+	{
+	    $bad{$sub} = 1;
+#	print STDERR &Dumper([$sub,\@sets]);
+	}
+	else
+	{
+	    foreach my $set (@sets)
+	    {
+		if (@$set > 1)
+		{
+		    print join(",",@$set),"\tInSubsystem:$sub\n";
+		}
+	    }
+	}
+    }
+foreach $_ (keys(%bad))
+{
+    print STDERR "bad subsystem\t$_\n";
+}
+
+sub split_on_pc {
+    my($pegs,$corrH) = @_;
+
+    my @sets = ();
+    my %used;
+    my $i;
+    for ($i=0; ($i < (@$pegs - 1)); $i++)
+    {
+	if (! $used{$pegs->[$i]})
+	{
+	    my @poss = ($pegs->[$i]);
+	    my $j;
+	    for ($j=$i+1; ($j < @$pegs); $j++)
+	    {
+		if (&corr($pegs->[$j],\@poss,$corrH))
+		{
+		    push(@poss,$pegs->[$j]);
+		    $used{$pegs->[$j]} = 1;
+		}
+	    }
+	    push(@sets,\@poss);
+	}
+    }
+    return @sets;
+}
+
+sub corr {
+    my($peg1,$cluster,$corrH) = @_;
+
+    my $sum = 0;
+    foreach my $peg2 (@$cluster)
+    {
+	my $v = $corrH->{$peg1}->{$peg2};
+	if ((! defined($v)) || ($v < 0.4)) { return 0 }
+	$sum += $v;
+    }
+    return (($sum / @$cluster) >= 0.7);
+}
+    
+
+
     #END compute_atomic_regulons
     my @_bad_returns;
     (ref($atomic_regulons) eq 'ARRAY') or push(@_bad_returns, "Invalid type for return variable \"atomic_regulons\" (value was \"$atomic_regulons\")");
