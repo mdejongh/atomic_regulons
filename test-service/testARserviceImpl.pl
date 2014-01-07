@@ -3,7 +3,7 @@ use strict;
 use Data::Dumper;
 use Bio::KBase::CDMI::CDMIClient;
 
-my $BS = 0; # flag to turn on processing of B. subtilis data
+my $BS = 1; # flag to turn on processing of B. subtilis data
 
 my $genome_id = "kb|g.20403"; # for MP
 $genome_id = "kb|g.423" if $BS;

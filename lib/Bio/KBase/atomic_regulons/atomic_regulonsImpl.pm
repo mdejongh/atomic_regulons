@@ -22,7 +22,416 @@ use gjoseqlib;
 use Data::Dumper;
 use Bio::KBase::CDMI::CDMIClient;
 use Bio::KBase::Utilities::ScriptThing;
-use File::Temp qw /tempdir/;
+
+my $csO = Bio::KBase::CDMI::CDMIClient->new_for_script();
+
+# internal subroutine that does all the work
+sub internal_compute_ars {
+    my $genome_id = shift @_;
+    my $expression_values = shift @_;
+    # initialize return values
+    my $atomic_regulons = [];
+    my $feature_calls = [];
+    my $ar_calls = [];
+
+    # get the features and roles for the genome
+    my $featuresH = $csO->genomes_to_fids([$genome_id],["CDS","rna"]);
+    my $rolesH = $csO->fids_to_roles($featuresH->{$genome_id});
+
+    # compute chromosomal clusters 
+    my @fids_with_values;
+    foreach my $fid (@{$featuresH->{$genome_id}}) {
+	if (exists $expression_values->{"expression_vectors"}->{$fid}) {
+	    push @fids_with_values, $fid;
+	} else {
+	    print STDERR "No expression values for $fid\n";
+	}
+    }
+    my $locH    = $csO->fids_to_locations(\@fids_with_values);
+    my @fids_with_loc = sort { ($a->[1]->[0] cmp $b->[1]->[0]) or
+				   (($a->[1]->[1]+$a->[1]->[2]) <=> ($b->[1]->[1]+$b->[1]->[2]))}
+                        map  { my($contig, $pos, $strand, $length) = @{$locH->{$_}->[0]};
+		           [$_,[$contig,$pos,($strand eq '+') ? ($pos+($length-1)) : ($pos -($length-1))]] }
+                        keys(%$locH);      
+    my $chromosomal_clusters = &possible_clusters(\@fids_with_loc,$expression_values->{"expression_vectors"});
+
+    # compute subsystem clusters
+    my $genomeH = $csO->genomes_to_subsystems( [$genome_id] );
+    my @subs = sort map { ($_->[0] =~ /^\*?(0|-1)$/) ? () : $_->[1] } @{$genomeH->{$genome_id}};
+
+    my $ss_clusters = [];
+    my %bad;
+
+    foreach my $sub (@subs)
+    {
+	my %pegs;
+	my @pegs;
+
+	my $subH = $csO->subsystems_to_fids( [$sub], [$genome_id]);
+	my $sub_entry = $subH->{$sub}->{$genome_id};
+	@pegs = ();
+	foreach my $pair (@$sub_entry)
+	{
+	    my $pegs = $pair->[1];
+	    foreach my $peg (@$pegs) { 
+		if (exists $expression_values->{"expression_vectors"}->{$peg}) {
+		    $pegs{$peg} = 1;
+		} else {
+		    print STDERR "No expression values for $peg\n";
+		}
+	    }
+	}
+	@pegs = sort { &SeedUtils::by_fig_id($a,$b) } keys(%pegs);
+
+	my @sets = grep { @$_ > 1 } split_on_pc(\@pegs,$expression_values->{"expression_vectors"});
+
+	if (@sets > ((@pegs + 2) / 3))
+	{
+	    $bad{$sub} = 1;
+#	print STDERR &Dumper([$sub,\@sets]);
+	}
+	else
+	{
+	    foreach my $set (@sets)
+	    {
+		if (@$set > 1)
+		{
+		    push @$ss_clusters, $set;
+		}
+	    }
+	}
+    }
+
+    foreach $_ (keys(%bad))
+    {
+	print STDERR "bad subsystem\t$_\n";
+    }
+
+    # code from ex_make_on_off_calls.pl
+    
+    my $heredoc = <<END;
+Alanyl-tRNA synthetase (EC 6.1.1.7)
+Arginyl-tRNA synthetase (EC 6.1.1.19)
+Asparaginyl-tRNA synthetase (EC 6.1.1.22)
+Aspartyl-tRNA synthetase (EC 6.1.1.12)
+Cysteinyl-tRNA synthetase (EC 6.1.1.16)
+DNA-directed RNA polymerase alpha subunit (EC 2.7.7.6)
+DNA-directed RNA polymerase beta subunit (EC 2.7.7.6)
+DNA-directed RNA polymerase beta\' subunit (EC 2.7.7.6)
+DNA-directed RNA polymerase omega subunit (EC 2.7.7.6)
+Glutaminyl-tRNA synthetase (EC 6.1.1.18)
+Glutamyl-tRNA synthetase (EC 6.1.1.17)
+Glycyl-tRNA synthetase alpha chain (EC 6.1.1.14)
+Glycyl-tRNA synthetase beta chain (EC 6.1.1.14)
+Histidyl-tRNA synthetase (EC 6.1.1.21)
+Isoleucyl-tRNA synthetase (EC 6.1.1.5)
+Leucyl-tRNA synthetase (EC 6.1.1.4)
+LSU ribosomal protein L10p (P0)
+LSU ribosomal protein L11p (L12e)
+LSU ribosomal protein L13p (L13Ae)
+LSU ribosomal protein L14p (L23e)
+LSU ribosomal protein L15p (L27Ae)
+LSU ribosomal protein L16p (L10e)
+LSU ribosomal protein L17p
+LSU ribosomal protein L18p (L5e)
+LSU ribosomal protein L19p
+LSU ribosomal protein L1p (L10Ae)
+LSU ribosomal protein L20p
+LSU ribosomal protein L21p
+LSU ribosomal protein L22p (L17e)
+LSU ribosomal protein L23p (L23Ae)
+LSU ribosomal protein L24p (L26e)
+LSU ribosomal protein L25p
+LSU ribosomal protein L27p
+LSU ribosomal protein L28p
+LSU ribosomal protein L29p (L35e)
+LSU ribosomal protein L2p (L8e)
+LSU ribosomal protein L30p (L7e)
+LSU ribosomal protein L31p
+LSU ribosomal protein L32p
+LSU ribosomal protein L33p
+LSU ribosomal protein L34p
+LSU ribosomal protein L35p
+LSU ribosomal protein L36p
+LSU ribosomal protein L3p (L3e)
+LSU ribosomal protein L4p (L1e)
+LSU ribosomal protein L5p (L11e)
+LSU ribosomal protein L6p (L9e)
+LSU ribosomal protein L9p
+Lysyl-tRNA synthetase (class II) (EC 6.1.1.6)
+Methionyl-tRNA synthetase (EC 6.1.1.10)
+Phenylalanyl-tRNA synthetase alpha chain (EC 6.1.1.20)
+Phenylalanyl-tRNA synthetase beta chain (EC 6.1.1.20)
+Seryl-tRNA synthetase (EC 6.1.1.11)
+SSU ribosomal protein S10p (S20e)
+SSU ribosomal protein S11p (S14e)
+SSU ribosomal protein S12p (S23e)
+SSU ribosomal protein S13p (S18e)
+SSU ribosomal protein S15p (S13e)
+SSU ribosomal protein S16p
+SSU ribosomal protein S17p (S11e)
+SSU ribosomal protein S19p (S15e)
+SSU ribosomal protein S1p
+SSU ribosomal protein S20p
+SSU ribosomal protein S21p
+SSU ribosomal protein S2p (SAe)
+SSU ribosomal protein S3p (S3e)
+SSU ribosomal protein S4p (S9e)
+SSU ribosomal protein S5p (S2e)
+SSU ribosomal protein S6p
+SSU ribosomal protein S7p (S5e)
+SSU ribosomal protein S8p (S15Ae)
+SSU ribosomal protein S9p (S16e)
+Threonyl-tRNA synthetase (EC 6.1.1.3)
+Tryptophanyl-tRNA synthetase (EC 6.1.1.2) ## proteobacterial type
+Valyl-tRNA synthetase (EC 6.1.1.9)
+END
+    my %roles_always_on = map { $_ => 1 } split "\n", $heredoc;
+
+    my %pegs_always_on;
+
+    foreach my $fid (keys %$rolesH) {
+	foreach my $role (@{$rolesH->{$fid}}) {
+	    if (exists $roles_always_on{$role}) {
+		$pegs_always_on{$fid} = 1;
+		last;
+	    }
+	}
+    }
+
+    my %on_for_exp;
+    my %off_for_exp;
+    my %diff_by_exp;
+
+    my $locusH = $expression_values->{"expression_vectors"};
+    my $exp_counter = 0;
+
+    foreach my $exp (@{$expression_values->{"sample_names"}})
+    {
+	my @on_values = sort { $a <=> $b } 
+	                map { $pegs_always_on{$_} ? $locusH->{$_}->[$exp_counter] : () } keys(%$locusH);
+	my $I_10 = int(@on_values * 0.1);
+	my $on_threshold = $on_values[$I_10];
+	$on_for_exp{$exp} = $on_threshold;
+	my @not_on_values = sort { $a <=> $b } 
+            	            map { ((! $pegs_always_on{$_} ) && ($locusH->{$_}->[$exp_counter] < $on_threshold)) ? $locusH->{$_}->[$exp_counter] : () } 
+	                    keys(%$locusH);
+	my $I_80  = int(@not_on_values * 0.8);
+	my $off_threshold = $not_on_values[$I_80];
+
+	$off_for_exp{$exp} = $off_threshold;
+	$diff_by_exp{$exp} = $on_threshold - $off_threshold;
+
+	$exp_counter++;
+    }
+    my @diffs = sort { $a <=> $b } map { $diff_by_exp{$_} } keys(%diff_by_exp);
+    my $I_25  = int(@diffs * 0.25);
+    my $diff_threshold = $diffs[$I_25];
+    foreach my $exp (keys(%off_for_exp))
+    {
+	if (($on_for_exp{$exp} - $off_for_exp{$exp}) < $diff_threshold)
+	{
+	    $off_for_exp{$exp} = $on_for_exp{$exp} - $diff_threshold;
+	}
+    }
+
+    my %peg_on_off_by_exp;
+
+    $exp_counter = 0;
+
+    foreach my $exp (@{$expression_values->{"sample_names"}})
+    {
+	my $on_threshold = $on_for_exp{$exp};
+	my $off_threshold = $off_for_exp{$exp};
+
+	foreach my $peg (keys(%$locusH))
+	{
+	    my $v = $locusH->{$peg}->[$exp_counter];
+	    if ($v >= $on_threshold)
+	    {
+		$peg_on_off_by_exp{$exp}->{$peg} = 1;
+	    }
+	    elsif ($v <= $off_threshold)
+	    {
+		$peg_on_off_by_exp{$exp}->{$peg} = -1;
+	    }
+	    else
+	    {
+		$peg_on_off_by_exp{$exp}->{$peg} = 0;
+	    }
+	}
+
+	$exp_counter++;
+    }
+    
+    # code from ex_make_initial_atomic_regulons.pl
+
+    my @exp = sort keys(%peg_on_off_by_exp);
+    my @pegs = keys %{$expression_values->{"expression_vectors"}};
+    my $pvecs = &to_pvec(\@exp,\@pegs,\%peg_on_off_by_exp);
+
+    # compute fids with same on/off profiles
+    my $same_profile_clusters = [];
+
+    for (my $i=0; ($i < $#pegs); $i++)
+    {
+	my $pvecsI = $pvecs->{$pegs[$i]};
+
+	for (my $j=$i+1; ($j < @pegs); $j++)
+	{
+	    my $pvecsJ = $pvecs->{$pegs[$j]};
+	    if (&same_profile($pvecsI,$pvecsJ))
+	    {
+		push @$same_profile_clusters, [$pegs[$i],$pegs[$j]];
+	    }
+	}
+    }
+
+    my $merged_clusters = &cluster_objects($chromosomal_clusters, $ss_clusters, $same_profile_clusters);
+
+    # code from ex_split_atomic_regulons
+
+    my $max_dist = 0.25;
+    my $ar = 1;
+    my $split_clusters = {};
+
+    foreach my $mc (values %$merged_clusters)
+    {
+	if (@$mc >= 100) {
+	    print STDERR "Skipping massive cluster\n";
+	    next;
+	}
+	my @pegs = @$mc;
+	my $ar_dist = {};
+	foreach my $peg1 (@pegs)
+	{
+	    foreach my $peg2 (@pegs)
+	    {
+		if ($peg1 ne $peg2 && ! defined $ar_dist->{$peg1}->{$peg2})
+		{
+		    my $pcc = &correl_coef($expression_values->{"expression_vectors"}->{$peg1},$expression_values->{"expression_vectors"}->{$peg2});
+		    my $d = (2 - ($pcc + 1)) / 2;
+		    $ar_dist->{$peg1}->{$peg2} = $d;
+		    $ar_dist->{$peg2}->{$peg1} = $d;
+		}
+	    }
+	}
+	my($clusters,undef) = &Clustering::cluster($ar_dist,$max_dist,"avg_dist");
+	foreach my $ar_pegs (@$clusters)
+	{
+	    if (@$ar_pegs > 1)
+	    {
+		$split_clusters->{$ar} = $ar_pegs;
+		$ar++;
+	    }
+	}
+    }
+
+    # code from ex_set_on_off_for_atomic_regulons.pl
+
+    my %exp_ar_call;
+
+    foreach my $exp (sort keys(%peg_on_off_by_exp))
+    {
+	foreach my $ar (sort { $a <=> $b } keys(%$split_clusters))
+	{
+	    my $pegs = $split_clusters->{$ar};
+	    my $on = 0;
+	    my $off = 0;
+	    foreach my $peg (@$pegs)
+	    {
+		my $v = $peg_on_off_by_exp{$exp}->{$peg};
+		if    ($v == 1)   { $on++  }
+		elsif ($v == -1)  { $off++ }
+	    }
+	    my $call;
+	    if ($on > $off)
+	    {
+		$call = 1;
+	    }
+	    elsif ($on < $off)
+	    {
+		$call = -1;
+	    }
+	    else
+	    {
+		$call = 0;
+	    }
+	    $exp_ar_call{$exp}->{$ar} = $call;
+	}
+    }
+
+    # code from ex_adjust_peg_on_off
+
+    my %exp_peg_val;
+    foreach my $ar (keys(%$split_clusters))
+    {
+	my $pegs_in_ar = $split_clusters->{$ar};
+	foreach my $exp (keys(%exp_ar_call))
+	{
+	    my $ar_call = $exp_ar_call{$exp}->{$ar};
+	    foreach my $peg (@$pegs_in_ar)
+	    {
+		if ($exp_peg_val{$exp}->{$peg} == 0)
+		{
+		    $exp_peg_val{$exp}->{$peg} = $ar_call;
+		}
+	    }
+	}
+    }
+
+    # code from ex_fillout_ar_data
+
+    my %ar_counts;
+    foreach my $exp (keys %exp_ar_call)
+    {
+	foreach my $ar (keys %{$exp_ar_call{$exp}})
+	{
+	    my $v = $exp_ar_call{$exp}->{$ar};
+	    if (! defined($ar_counts{$ar})) { $ar_counts{$ar} = [0,0,0] }
+	    $ar_counts{$ar}->[$v+1] += 1;
+	}
+    }
+
+    my %peg_counts;
+    foreach my $exp (keys %exp_peg_val)
+    {
+	foreach my $peg (keys %{$exp_peg_val{$exp}})
+	{
+	    my $v = $exp_peg_val{$exp}->{$peg};
+	    if (! defined($peg_counts{$peg})) { $peg_counts{$peg} = [0,0,0] }
+	    $peg_counts{$peg}->[$v+1] += 1;
+	}
+    }
+
+    foreach my $ar (keys %$split_clusters) 
+    {
+	# Ross doesn't seem to be modifying the atomic regulons, just printing a new file
+	# &process_fillout($ar,$split_clusters->{ar},\%ar_counts,\%peg_counts,$expression_values->{"expression_vectors"});
+    }
+
+    # load up the return values
+    foreach my $ar (keys %$split_clusters) 
+    {
+	push @$atomic_regulons, {"ar_id" => $ar, "feature_ids" => $split_clusters->{$ar}};
+    }
+
+    foreach my $exp (keys %exp_peg_val) 
+    {
+	foreach my $peg (keys %{$exp_peg_val{$exp}}) {
+	    push @$feature_calls, {"sample_name" => $exp, "feature_id" => $peg, "on_off_unknown" => $exp_peg_val{$exp}->{$peg}};
+	}
+    }
+
+    foreach my $exp (keys %exp_ar_call) 
+    {
+	foreach my $ar (keys %{$exp_ar_call{$exp}}) {
+	    push @$ar_calls, {"sample_name" => $exp, "ar_id" => $ar, "on_off_unknown" => $exp_ar_call{$exp}->{$ar}};
+	}
+    }
+
+    return ($atomic_regulons, $feature_calls, $ar_calls);
+}
 
 #-----------------------------------------------------------------------------
 #  $cc = correl_coef( \@x, \@y ) ; copied from gjostat
@@ -446,405 +855,7 @@ sub compute_atomic_regulons
     my $ctx = $Bio::KBase::atomic_regulons::Service::CallContext;
     my($atomic_regulons, $feature_calls, $ar_calls);
     #BEGIN compute_atomic_regulons
-
-    # initialize return values
-    $atomic_regulons = [];
-    $feature_calls = [];
-    $ar_calls = [];
-
-    # get the features and roles for the genome
-    my $csO = Bio::KBase::CDMI::CDMIClient->new_for_script();
-    my $featuresH = $csO->genomes_to_fids([$genome_id],["CDS","rna"]);
-    my $rolesH = $csO->fids_to_roles($featuresH->{$genome_id});
-
-    # compute chromosomal clusters 
-    my @fids_with_values;
-    foreach my $fid (@{$featuresH->{$genome_id}}) {
-	if (exists $expression_values->{"expression_vectors"}->{$fid}) {
-	    push @fids_with_values, $fid;
-	} else {
-	    print STDERR "No expression values for $fid\n";
-	}
-    }
-    my $locH    = $csO->fids_to_locations(\@fids_with_values);
-    my @fids_with_loc = sort { ($a->[1]->[0] cmp $b->[1]->[0]) or
-				   (($a->[1]->[1]+$a->[1]->[2]) <=> ($b->[1]->[1]+$b->[1]->[2]))}
-                        map  { my($contig, $pos, $strand, $length) = @{$locH->{$_}->[0]};
-		           [$_,[$contig,$pos,($strand eq '+') ? ($pos+($length-1)) : ($pos -($length-1))]] }
-                        keys(%$locH);      
-    my $chromosomal_clusters = &possible_clusters(\@fids_with_loc,$expression_values->{"expression_vectors"});
-
-    # compute subsystem clusters
-    my $genomeH = $csO->genomes_to_subsystems( [$genome_id] );
-    my @subs = sort map { ($_->[0] =~ /^\*?(0|-1)$/) ? () : $_->[1] } @{$genomeH->{$genome_id}};
-
-    my $ss_clusters = [];
-    my %bad;
-
-    foreach my $sub (@subs)
-    {
-	my %pegs;
-	my @pegs;
-
-	my $subH = $csO->subsystems_to_fids( [$sub], [$genome_id]);
-	my $sub_entry = $subH->{$sub}->{$genome_id};
-	@pegs = ();
-	foreach my $pair (@$sub_entry)
-	{
-	    my $pegs = $pair->[1];
-	    foreach my $peg (@$pegs) { 
-		if (exists $expression_values->{"expression_vectors"}->{$peg}) {
-		    $pegs{$peg} = 1;
-		} else {
-		    print STDERR "No expression values for $peg\n";
-		}
-	    }
-	}
-	@pegs = sort { &SeedUtils::by_fig_id($a,$b) } keys(%pegs);
-
-	my @sets = grep { @$_ > 1 } split_on_pc(\@pegs,$expression_values->{"expression_vectors"});
-
-	if (@sets > ((@pegs + 2) / 3))
-	{
-	    $bad{$sub} = 1;
-#	print STDERR &Dumper([$sub,\@sets]);
-	}
-	else
-	{
-	    foreach my $set (@sets)
-	    {
-		if (@$set > 1)
-		{
-		    push @$ss_clusters, $set;
-		}
-	    }
-	}
-    }
-
-    foreach $_ (keys(%bad))
-    {
-	print STDERR "bad subsystem\t$_\n";
-    }
-
-    # code from ex_make_on_off_calls.pl
-    
-    my $heredoc = <<END;
-Alanyl-tRNA synthetase (EC 6.1.1.7)
-Arginyl-tRNA synthetase (EC 6.1.1.19)
-Asparaginyl-tRNA synthetase (EC 6.1.1.22)
-Aspartyl-tRNA synthetase (EC 6.1.1.12)
-Cysteinyl-tRNA synthetase (EC 6.1.1.16)
-DNA-directed RNA polymerase alpha subunit (EC 2.7.7.6)
-DNA-directed RNA polymerase beta subunit (EC 2.7.7.6)
-DNA-directed RNA polymerase beta\' subunit (EC 2.7.7.6)
-DNA-directed RNA polymerase omega subunit (EC 2.7.7.6)
-Glutaminyl-tRNA synthetase (EC 6.1.1.18)
-Glutamyl-tRNA synthetase (EC 6.1.1.17)
-Glycyl-tRNA synthetase alpha chain (EC 6.1.1.14)
-Glycyl-tRNA synthetase beta chain (EC 6.1.1.14)
-Histidyl-tRNA synthetase (EC 6.1.1.21)
-Isoleucyl-tRNA synthetase (EC 6.1.1.5)
-Leucyl-tRNA synthetase (EC 6.1.1.4)
-LSU ribosomal protein L10p (P0)
-LSU ribosomal protein L11p (L12e)
-LSU ribosomal protein L13p (L13Ae)
-LSU ribosomal protein L14p (L23e)
-LSU ribosomal protein L15p (L27Ae)
-LSU ribosomal protein L16p (L10e)
-LSU ribosomal protein L17p
-LSU ribosomal protein L18p (L5e)
-LSU ribosomal protein L19p
-LSU ribosomal protein L1p (L10Ae)
-LSU ribosomal protein L20p
-LSU ribosomal protein L21p
-LSU ribosomal protein L22p (L17e)
-LSU ribosomal protein L23p (L23Ae)
-LSU ribosomal protein L24p (L26e)
-LSU ribosomal protein L25p
-LSU ribosomal protein L27p
-LSU ribosomal protein L28p
-LSU ribosomal protein L29p (L35e)
-LSU ribosomal protein L2p (L8e)
-LSU ribosomal protein L30p (L7e)
-LSU ribosomal protein L31p
-LSU ribosomal protein L32p
-LSU ribosomal protein L33p
-LSU ribosomal protein L34p
-LSU ribosomal protein L35p
-LSU ribosomal protein L36p
-LSU ribosomal protein L3p (L3e)
-LSU ribosomal protein L4p (L1e)
-LSU ribosomal protein L5p (L11e)
-LSU ribosomal protein L6p (L9e)
-LSU ribosomal protein L9p
-Lysyl-tRNA synthetase (class II) (EC 6.1.1.6)
-Methionyl-tRNA synthetase (EC 6.1.1.10)
-Phenylalanyl-tRNA synthetase alpha chain (EC 6.1.1.20)
-Phenylalanyl-tRNA synthetase beta chain (EC 6.1.1.20)
-Seryl-tRNA synthetase (EC 6.1.1.11)
-SSU ribosomal protein S10p (S20e)
-SSU ribosomal protein S11p (S14e)
-SSU ribosomal protein S12p (S23e)
-SSU ribosomal protein S13p (S18e)
-SSU ribosomal protein S15p (S13e)
-SSU ribosomal protein S16p
-SSU ribosomal protein S17p (S11e)
-SSU ribosomal protein S19p (S15e)
-SSU ribosomal protein S1p
-SSU ribosomal protein S20p
-SSU ribosomal protein S21p
-SSU ribosomal protein S2p (SAe)
-SSU ribosomal protein S3p (S3e)
-SSU ribosomal protein S4p (S9e)
-SSU ribosomal protein S5p (S2e)
-SSU ribosomal protein S6p
-SSU ribosomal protein S7p (S5e)
-SSU ribosomal protein S8p (S15Ae)
-SSU ribosomal protein S9p (S16e)
-Threonyl-tRNA synthetase (EC 6.1.1.3)
-Tryptophanyl-tRNA synthetase (EC 6.1.1.2) ## proteobacterial type
-Valyl-tRNA synthetase (EC 6.1.1.9)
-END
-    my %roles_always_on = map { $_ => 1 } split "\n", $heredoc;
-
-    my %pegs_always_on;
-
-    foreach my $fid (keys %$rolesH) {
-	foreach my $role (@{$rolesH->{$fid}}) {
-	    if (exists $roles_always_on{$role}) {
-		$pegs_always_on{$fid} = 1;
-		last;
-	    }
-	}
-    }
-
-    my %on_for_exp;
-    my %off_for_exp;
-    my %diff_by_exp;
-
-    my $locusH = $expression_values->{"expression_vectors"};
-    my $exp_counter = 0;
-
-    foreach my $exp (@{$expression_values->{"sample_names"}})
-    {
-	my @on_values = sort { $a <=> $b } 
-	                map { $pegs_always_on{$_} ? $locusH->{$_}->[$exp_counter] : () } keys(%$locusH);
-	my $I_10 = int(@on_values * 0.1);
-	my $on_threshold = $on_values[$I_10];
-	$on_for_exp{$exp} = $on_threshold;
-	my @not_on_values = sort { $a <=> $b } 
-            	            map { ((! $pegs_always_on{$_} ) && ($locusH->{$_}->[$exp_counter] < $on_threshold)) ? $locusH->{$_}->[$exp_counter] : () } 
-	                    keys(%$locusH);
-	my $I_80  = int(@not_on_values * 0.8);
-	my $off_threshold = $not_on_values[$I_80];
-
-	$off_for_exp{$exp} = $off_threshold;
-	$diff_by_exp{$exp} = $on_threshold - $off_threshold;
-
-	$exp_counter++;
-    }
-    my @diffs = sort { $a <=> $b } map { $diff_by_exp{$_} } keys(%diff_by_exp);
-    my $I_25  = int(@diffs * 0.25);
-    my $diff_threshold = $diffs[$I_25];
-    foreach my $exp (keys(%off_for_exp))
-    {
-	if (($on_for_exp{$exp} - $off_for_exp{$exp}) < $diff_threshold)
-	{
-	    $off_for_exp{$exp} = $on_for_exp{$exp} - $diff_threshold;
-	}
-    }
-
-    my %peg_on_off_by_exp;
-
-    $exp_counter = 0;
-
-    foreach my $exp (@{$expression_values->{"sample_names"}})
-    {
-	my $on_threshold = $on_for_exp{$exp};
-	my $off_threshold = $off_for_exp{$exp};
-
-	foreach my $peg (keys(%$locusH))
-	{
-	    my $v = $locusH->{$peg}->[$exp_counter];
-	    if ($v >= $on_threshold)
-	    {
-		$peg_on_off_by_exp{$exp}->{$peg} = 1;
-	    }
-	    elsif ($v <= $off_threshold)
-	    {
-		$peg_on_off_by_exp{$exp}->{$peg} = -1;
-	    }
-	    else
-	    {
-		$peg_on_off_by_exp{$exp}->{$peg} = 0;
-	    }
-	}
-
-	$exp_counter++;
-    }
-    
-    # code from ex_make_initial_atomic_regulons.pl
-
-    my @exp = sort keys(%peg_on_off_by_exp);
-    my @pegs = keys %{$expression_values->{"expression_vectors"}};
-    my $pvecs = &to_pvec(\@exp,\@pegs,\%peg_on_off_by_exp);
-
-    # compute fids with same on/off profiles
-    my $same_profile_clusters = [];
-
-    for (my $i=0; ($i < $#pegs); $i++)
-    {
-	my $pvecsI = $pvecs->{$pegs[$i]};
-
-	for (my $j=$i+1; ($j < @pegs); $j++)
-	{
-	    my $pvecsJ = $pvecs->{$pegs[$j]};
-	    if (&same_profile($pvecsI,$pvecsJ))
-	    {
-		push @$same_profile_clusters, [$pegs[$i],$pegs[$j]];
-	    }
-	}
-    }
-
-    my $merged_clusters = &cluster_objects($chromosomal_clusters, $ss_clusters, $same_profile_clusters);
-
-    # code from ex_split_atomic_regulons
-
-    my $max_dist = 0.25;
-    my $ar = 1;
-    my $split_clusters = {};
-
-    foreach my $mc (values %$merged_clusters)
-    {
-	my @pegs = @$mc;
-	my $ar_dist = {};
-	foreach my $peg1 (@pegs)
-	{
-	    foreach my $peg2 (@pegs)
-	    {
-		if ($peg1 ne $peg2 && ! defined $ar_dist->{$peg1}->{$peg2})
-		{
-		    my $pcc = &correl_coef($expression_values->{"expression_vectors"}->{$peg1},$expression_values->{"expression_vectors"}->{$peg2});
-		    my $d = (2 - ($pcc + 1)) / 2;
-		    $ar_dist->{$peg1}->{$peg2} = $d;
-		    $ar_dist->{$peg2}->{$peg1} = $d;
-		}
-	    }
-	}
-	my($clusters,undef) = &Clustering::cluster($ar_dist,$max_dist,"avg_dist");
-	foreach my $ar_pegs (@$clusters)
-	{
-	    if (@$ar_pegs > 1)
-	    {
-		$split_clusters->{$ar} = $ar_pegs;
-		$ar++;
-	    }
-	}
-    }
-
-    # code from ex_set_on_off_for_atomic_regulons.pl
-
-    my %exp_ar_call;
-
-    foreach my $exp (sort keys(%peg_on_off_by_exp))
-    {
-	foreach my $ar (sort { $a <=> $b } keys(%$split_clusters))
-	{
-	    my $pegs = $split_clusters->{$ar};
-	    my $on = 0;
-	    my $off = 0;
-	    foreach my $peg (@$pegs)
-	    {
-		my $v = $peg_on_off_by_exp{$exp}->{$peg};
-		if    ($v == 1)   { $on++  }
-		elsif ($v == -1)  { $off++ }
-	    }
-	    my $call;
-	    if ($on > $off)
-	    {
-		$call = 1;
-	    }
-	    elsif ($on < $off)
-	    {
-		$call = -1;
-	    }
-	    else
-	    {
-		$call = 0;
-	    }
-	    $exp_ar_call{$exp}->{$ar} = $call;
-	}
-    }
-
-    # code from ex_adjust_peg_on_off
-
-    my %exp_peg_val;
-    foreach my $ar (keys(%$split_clusters))
-    {
-	my $pegs_in_ar = $split_clusters->{$ar};
-	foreach my $exp (keys(%exp_ar_call))
-	{
-	    my $ar_call = $exp_ar_call{$exp}->{$ar};
-	    foreach my $peg (@$pegs_in_ar)
-	    {
-		if ($exp_peg_val{$exp}->{$peg} == 0)
-		{
-		    $exp_peg_val{$exp}->{$peg} = $ar_call;
-		}
-	    }
-	}
-    }
-
-    # code from ex_fillout_ar_data
-
-    my %ar_counts;
-    foreach my $exp (keys %exp_ar_call)
-    {
-	foreach my $ar (keys %{$exp_ar_call{$exp}})
-	{
-	    my $v = $exp_ar_call{$exp}->{$ar};
-	    if (! defined($ar_counts{$ar})) { $ar_counts{$ar} = [0,0,0] }
-	    $ar_counts{$ar}->[$v+1] += 1;
-	}
-    }
-
-    my %peg_counts;
-    foreach my $exp (keys %exp_peg_val)
-    {
-	foreach my $peg (keys %{$exp_peg_val{$exp}})
-	{
-	    my $v = $exp_peg_val{$exp}->{$peg};
-	    if (! defined($peg_counts{$peg})) { $peg_counts{$peg} = [0,0,0] }
-	    $peg_counts{$peg}->[$v+1] += 1;
-	}
-    }
-
-    foreach my $ar (keys %$split_clusters) 
-    {
-	# Ross doesn't seem to be modifying the atomic regulons, just printing a new file
-	# &process_fillout($ar,$split_clusters->{ar},\%ar_counts,\%peg_counts,$expression_values->{"expression_vectors"});
-    }
-
-    # load up the return values
-    foreach my $ar (keys %$split_clusters) 
-    {
-	push @$atomic_regulons, {"ar_id" => $ar, "feature_ids" => $split_clusters->{$ar}};
-    }
-
-    foreach my $exp (keys %exp_peg_val) 
-    {
-	foreach my $peg (keys %{$exp_peg_val{$exp}}) {
-	    push @$feature_calls, {"sample_name" => $exp, "feature_id" => $peg, "on_off_unknown" => $exp_peg_val{$exp}->{$peg}};
-	}
-    }
-
-    foreach my $exp (keys %exp_ar_call) 
-    {
-	foreach my $ar (keys %{$exp_ar_call{$exp}}) {
-	    push @$ar_calls, {"sample_name" => $exp, "ar_id" => $ar, "on_off_unknown" => $exp_ar_call{$exp}->{$ar}};
-	}
-    }
-
+    ($atomic_regulons, $feature_calls, $ar_calls) = internal_compute_ars($genome_id, $expression_values);
     #END compute_atomic_regulons
     my @_bad_returns;
     (ref($atomic_regulons) eq 'ARRAY') or push(@_bad_returns, "Invalid type for return variable \"atomic_regulons\" (value was \"$atomic_regulons\")");
@@ -854,6 +865,119 @@ END
 	my $msg = "Invalid returns passed to compute_atomic_regulons:\n" . join("", map { "\t$_\n" } @_bad_returns);
 	Bio::KBase::Exceptions::ArgumentValidationError->throw(error => $msg,
 							       method_name => 'compute_atomic_regulons');
+    }
+    return($atomic_regulons, $feature_calls, $ar_calls);
+}
+
+
+
+
+=head2 compute_atomic_regulons_CDS
+
+  $atomic_regulons, $feature_calls, $ar_calls = $obj->compute_atomic_regulons_CDS($genome_id)
+
+=over 4
+
+=item Parameter and return types
+
+=begin html
+
+<pre>
+$genome_id is a string
+$atomic_regulons is a reference to a list where each element is an AtomicRegulon
+$feature_calls is a reference to a list where each element is a FeatureOnOffCall
+$ar_calls is a reference to a list where each element is an AtomicRegulonOnOffCall
+AtomicRegulon is a reference to a hash where the following keys are defined:
+	ar_id has a value which is a string
+	feature_ids has a value which is a reference to a list where each element is a string
+FeatureOnOffCall is a reference to a hash where the following keys are defined:
+	sample_name has a value which is a string
+	feature_id has a value which is a string
+	on_off_unknown has a value which is an int
+AtomicRegulonOnOffCall is a reference to a hash where the following keys are defined:
+	sample_name has a value which is a string
+	ar_id has a value which is a string
+	on_off_unknown has a value which is an int
+
+</pre>
+
+=end html
+
+=begin text
+
+$genome_id is a string
+$atomic_regulons is a reference to a list where each element is an AtomicRegulon
+$feature_calls is a reference to a list where each element is a FeatureOnOffCall
+$ar_calls is a reference to a list where each element is an AtomicRegulonOnOffCall
+AtomicRegulon is a reference to a hash where the following keys are defined:
+	ar_id has a value which is a string
+	feature_ids has a value which is a reference to a list where each element is a string
+FeatureOnOffCall is a reference to a hash where the following keys are defined:
+	sample_name has a value which is a string
+	feature_id has a value which is a string
+	on_off_unknown has a value which is an int
+AtomicRegulonOnOffCall is a reference to a hash where the following keys are defined:
+	sample_name has a value which is a string
+	ar_id has a value which is a string
+	on_off_unknown has a value which is an int
+
+
+=end text
+
+
+
+=item Description
+
+compute atomic regulons for a genome from expression values in the CDS
+
+=back
+
+=cut
+
+sub compute_atomic_regulons_CDS
+{
+    my $self = shift;
+    my($genome_id) = @_;
+
+    my @_bad_arguments;
+    (!ref($genome_id)) or push(@_bad_arguments, "Invalid type for argument \"genome_id\" (value was \"$genome_id\")");
+    if (@_bad_arguments) {
+	my $msg = "Invalid arguments passed to compute_atomic_regulons_CDS:\n" . join("", map { "\t$_\n" } @_bad_arguments);
+	Bio::KBase::Exceptions::ArgumentValidationError->throw(error => $msg,
+							       method_name => 'compute_atomic_regulons_CDS');
+    }
+
+    my $ctx = $Bio::KBase::atomic_regulons::Service::CallContext;
+    my($atomic_regulons, $feature_calls, $ar_calls);
+    #BEGIN compute_atomic_regulons_CDS
+    my $expression_values = {};
+    $expression_values->{"sample_names"} = [];
+    $expression_values->{"expression_vectors"} = {}; # map from feature_id to list of float expression_levels
+    
+    my $probeSetInfo = $csO->get_relationship_HadResultsProducedBy([$genome_id],[],[],["id"]);
+    Bio::KBase::Exceptions::KBaseException->throw(error => "No probe sets for $genome_id", method_name => 'compute_atomic_regulons_CDS') unless (@$probeSetInfo);
+
+    # use first probe set
+    my $experimentInfo = $csO->get_relationship_HasResultsIn([$probeSetInfo->[0]->[2]->{"id"}],[],[],["id"]);
+
+    foreach my $exp (@$experimentInfo) {
+	push @{$expression_values->{"sample_names"}}, $exp->[2]->{"id"};
+	my $signals = $csO->get_relationship_IndicatesSignalFor([$exp->[2]->{"id"}],[],["rma_value"],["id"]);
+	foreach my $signal (@$signals) {
+	    push @{$expression_values->{"expression_vectors"}->{$signal->[2]->{"id"}}}, $signal->[1]->{"rma_value"};
+	}
+    }
+
+    ($atomic_regulons, $feature_calls, $ar_calls) = internal_compute_ars($genome_id, $expression_values);
+    #END compute_atomic_regulons_CDS
+    my @_bad_returns;
+    (ref($atomic_regulons) eq 'ARRAY') or push(@_bad_returns, "Invalid type for return variable \"atomic_regulons\" (value was \"$atomic_regulons\")");
+    (ref($feature_calls) eq 'ARRAY') or push(@_bad_returns, "Invalid type for return variable \"feature_calls\" (value was \"$feature_calls\")");
+    (ref($ar_calls) eq 'ARRAY') or push(@_bad_returns, "Invalid type for return variable \"ar_calls\" (value was \"$ar_calls\")");
+    if (@_bad_returns) {
+	my $msg = "Invalid returns passed to compute_atomic_regulons_CDS:\n" . join("", map { "\t$_\n" } @_bad_returns);
+	Bio::KBase::Exceptions::ArgumentValidationError->throw(error => $msg,
+							       method_name => 'compute_atomic_regulons_CDS');
     }
     return($atomic_regulons, $feature_calls, $ar_calls);
 }

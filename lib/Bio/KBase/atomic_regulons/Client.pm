@@ -63,7 +63,7 @@ $feature_calls is a reference to a list where each element is a FeatureOnOffCall
 $ar_calls is a reference to a list where each element is an AtomicRegulonOnOffCall
 ExpressionValues is a reference to a hash where the following keys are defined:
 	sample_names has a value which is a reference to a list where each element is a string
-	expression_vectors has a value which is a reference to a hash where the key is a string and the value is a reference to a list where each element is a string
+	expression_vectors has a value which is a reference to a hash where the key is a string and the value is a reference to a list where each element is a float
 AtomicRegulon is a reference to a hash where the following keys are defined:
 	ar_id has a value which is a string
 	feature_ids has a value which is a reference to a list where each element is a string
@@ -89,7 +89,7 @@ $feature_calls is a reference to a list where each element is a FeatureOnOffCall
 $ar_calls is a reference to a list where each element is an AtomicRegulonOnOffCall
 ExpressionValues is a reference to a hash where the following keys are defined:
 	sample_names has a value which is a reference to a list where each element is a string
-	expression_vectors has a value which is a reference to a hash where the key is a string and the value is a reference to a list where each element is a string
+	expression_vectors has a value which is a reference to a hash where the key is a string and the value is a reference to a list where each element is a float
 AtomicRegulon is a reference to a hash where the following keys are defined:
 	ar_id has a value which is a string
 	feature_ids has a value which is a reference to a list where each element is a string
@@ -144,8 +144,9 @@ sub compute_atomic_regulons
     if ($result) {
 	if ($result->is_error) {
 	    Bio::KBase::Exceptions::JSONRPC->throw(error => $result->error_message,
-					       code => $result->content->{code},
+					       code => $result->content->{error}->{code},
 					       method_name => 'compute_atomic_regulons',
+					       data => $result->content->{error}->{error} # JSON::RPC::ReturnObject only supports JSONRPC 1.1 or 1.O
 					      );
 	} else {
 	    return wantarray ? @{$result->result} : $result->result->[0];
@@ -154,6 +155,113 @@ sub compute_atomic_regulons
         Bio::KBase::Exceptions::HTTP->throw(error => "Error invoking method compute_atomic_regulons",
 					    status_line => $self->{client}->status_line,
 					    method_name => 'compute_atomic_regulons',
+				       );
+    }
+}
+
+
+
+=head2 compute_atomic_regulons_CDS
+
+  $atomic_regulons, $feature_calls, $ar_calls = $obj->compute_atomic_regulons_CDS($genome_id)
+
+=over 4
+
+=item Parameter and return types
+
+=begin html
+
+<pre>
+$genome_id is a string
+$atomic_regulons is a reference to a list where each element is an AtomicRegulon
+$feature_calls is a reference to a list where each element is a FeatureOnOffCall
+$ar_calls is a reference to a list where each element is an AtomicRegulonOnOffCall
+AtomicRegulon is a reference to a hash where the following keys are defined:
+	ar_id has a value which is a string
+	feature_ids has a value which is a reference to a list where each element is a string
+FeatureOnOffCall is a reference to a hash where the following keys are defined:
+	sample_name has a value which is a string
+	feature_id has a value which is a string
+	on_off_unknown has a value which is an int
+AtomicRegulonOnOffCall is a reference to a hash where the following keys are defined:
+	sample_name has a value which is a string
+	ar_id has a value which is a string
+	on_off_unknown has a value which is an int
+
+</pre>
+
+=end html
+
+=begin text
+
+$genome_id is a string
+$atomic_regulons is a reference to a list where each element is an AtomicRegulon
+$feature_calls is a reference to a list where each element is a FeatureOnOffCall
+$ar_calls is a reference to a list where each element is an AtomicRegulonOnOffCall
+AtomicRegulon is a reference to a hash where the following keys are defined:
+	ar_id has a value which is a string
+	feature_ids has a value which is a reference to a list where each element is a string
+FeatureOnOffCall is a reference to a hash where the following keys are defined:
+	sample_name has a value which is a string
+	feature_id has a value which is a string
+	on_off_unknown has a value which is an int
+AtomicRegulonOnOffCall is a reference to a hash where the following keys are defined:
+	sample_name has a value which is a string
+	ar_id has a value which is a string
+	on_off_unknown has a value which is an int
+
+
+=end text
+
+=item Description
+
+compute atomic regulons for a genome from expression values in the CDS
+
+=back
+
+=cut
+
+sub compute_atomic_regulons_CDS
+{
+    my($self, @args) = @_;
+
+# Authentication: none
+
+    if ((my $n = @args) != 1)
+    {
+	Bio::KBase::Exceptions::ArgumentValidationError->throw(error =>
+							       "Invalid argument count for function compute_atomic_regulons_CDS (received $n, expecting 1)");
+    }
+    {
+	my($genome_id) = @args;
+
+	my @_bad_arguments;
+        (!ref($genome_id)) or push(@_bad_arguments, "Invalid type for argument 1 \"genome_id\" (value was \"$genome_id\")");
+        if (@_bad_arguments) {
+	    my $msg = "Invalid arguments passed to compute_atomic_regulons_CDS:\n" . join("", map { "\t$_\n" } @_bad_arguments);
+	    Bio::KBase::Exceptions::ArgumentValidationError->throw(error => $msg,
+								   method_name => 'compute_atomic_regulons_CDS');
+	}
+    }
+
+    my $result = $self->{client}->call($self->{url}, {
+	method => "atomic_regulons.compute_atomic_regulons_CDS",
+	params => \@args,
+    });
+    if ($result) {
+	if ($result->is_error) {
+	    Bio::KBase::Exceptions::JSONRPC->throw(error => $result->error_message,
+					       code => $result->content->{error}->{code},
+					       method_name => 'compute_atomic_regulons_CDS',
+					       data => $result->content->{error}->{error} # JSON::RPC::ReturnObject only supports JSONRPC 1.1 or 1.O
+					      );
+	} else {
+	    return wantarray ? @{$result->result} : $result->result->[0];
+	}
+    } else {
+        Bio::KBase::Exceptions::HTTP->throw(error => "Error invoking method compute_atomic_regulons_CDS",
+					    status_line => $self->{client}->status_line,
+					    method_name => 'compute_atomic_regulons_CDS',
 				       );
     }
 }
@@ -171,16 +279,16 @@ sub version {
             Bio::KBase::Exceptions::JSONRPC->throw(
                 error => $result->error_message,
                 code => $result->content->{code},
-                method_name => 'compute_atomic_regulons',
+                method_name => 'compute_atomic_regulons_CDS',
             );
         } else {
             return wantarray ? @{$result->result} : $result->result->[0];
         }
     } else {
         Bio::KBase::Exceptions::HTTP->throw(
-            error => "Error invoking method compute_atomic_regulons",
+            error => "Error invoking method compute_atomic_regulons_CDS",
             status_line => $self->{client}->status_line,
-            method_name => 'compute_atomic_regulons',
+            method_name => 'compute_atomic_regulons_CDS',
         );
     }
 }
@@ -256,7 +364,9 @@ a string
 
 =item Description
 
-table of expression levels for features in samples
+table of expression levels for features in samples;
+the order of the expression_levels should match the order of the sample_names
+and there should be no missing values
 
 
 =item Definition
@@ -266,7 +376,7 @@ table of expression levels for features in samples
 <pre>
 a reference to a hash where the following keys are defined:
 sample_names has a value which is a reference to a list where each element is a string
-expression_vectors has a value which is a reference to a hash where the key is a string and the value is a reference to a list where each element is a string
+expression_vectors has a value which is a reference to a hash where the key is a string and the value is a reference to a list where each element is a float
 
 </pre>
 
@@ -276,7 +386,7 @@ expression_vectors has a value which is a reference to a hash where the key is a
 
 a reference to a hash where the following keys are defined:
 sample_names has a value which is a reference to a list where each element is a string
-expression_vectors has a value which is a reference to a hash where the key is a string and the value is a reference to a list where each element is a string
+expression_vectors has a value which is a reference to a hash where the key is a string and the value is a reference to a list where each element is a float
 
 
 =end text
@@ -330,7 +440,7 @@ feature_ids has a value which is a reference to a list where each element is a s
 
 =item Description
 
-on/off/unknown call for a feature in one sample
+on (1) / off (-1) / unknown (0) call for a feature in one sample
 
 
 =item Definition
@@ -369,7 +479,7 @@ on_off_unknown has a value which is an int
 
 =item Description
 
-on/off/unknown call for an AtomicRegulon in one sample
+on (1) / off (-1) / unknown (0) call for an AtomicRegulon in one sample
 
 
 =item Definition
