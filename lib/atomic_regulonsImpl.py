@@ -64,3 +64,22 @@ class atomic_regulons:
                              'ar_calls is not type list as required.')
         # return the results
         return [atomic_regulons, feature_calls, ar_calls]
+
+    def compute_atomic_regulons_expressionServices(self, genome_id, sample_ids):
+        # self.ctx is set by the wsgi application class
+        # return variables are: atomic_regulons, feature_calls, ar_calls
+        #BEGIN compute_atomic_regulons_expressionServices
+        #END compute_atomic_regulons_expressionServices
+
+        #At some point might do deeper type checking...
+        if not isinstance(atomic_regulons, list):
+            raise ValueError('Method compute_atomic_regulons_expressionServices return value ' +
+                             'atomic_regulons is not type list as required.')
+        if not isinstance(feature_calls, list):
+            raise ValueError('Method compute_atomic_regulons_expressionServices return value ' +
+                             'feature_calls is not type list as required.')
+        if not isinstance(ar_calls, list):
+            raise ValueError('Method compute_atomic_regulons_expressionServices return value ' +
+                             'ar_calls is not type list as required.')
+        # return the results
+        return [atomic_regulons, feature_calls, ar_calls]

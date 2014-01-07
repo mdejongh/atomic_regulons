@@ -18,6 +18,7 @@ our $CallContext;
 our %return_counts = (
         'compute_atomic_regulons' => 3,
         'compute_atomic_regulons_CDS' => 3,
+        'compute_atomic_regulons_expressionServices' => 3,
         'version' => 1,
 );
 
@@ -29,6 +30,7 @@ sub _build_valid_methods
     my $methods = {
         'compute_atomic_regulons' => 1,
         'compute_atomic_regulons_CDS' => 1,
+        'compute_atomic_regulons_expressionServices' => 1,
         'version' => 1,
     };
     return $methods;

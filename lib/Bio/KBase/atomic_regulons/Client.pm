@@ -268,6 +268,117 @@ sub compute_atomic_regulons_CDS
 
 
 
+=head2 compute_atomic_regulons_expressionServices
+
+  $atomic_regulons, $feature_calls, $ar_calls = $obj->compute_atomic_regulons_expressionServices($genome_id, $sample_ids)
+
+=over 4
+
+=item Parameter and return types
+
+=begin html
+
+<pre>
+$genome_id is a string
+$sample_ids is a reference to a list where each element is a string
+$atomic_regulons is a reference to a list where each element is an AtomicRegulon
+$feature_calls is a reference to a list where each element is a FeatureOnOffCall
+$ar_calls is a reference to a list where each element is an AtomicRegulonOnOffCall
+AtomicRegulon is a reference to a hash where the following keys are defined:
+	ar_id has a value which is a string
+	feature_ids has a value which is a reference to a list where each element is a string
+FeatureOnOffCall is a reference to a hash where the following keys are defined:
+	sample_name has a value which is a string
+	feature_id has a value which is a string
+	on_off_unknown has a value which is an int
+AtomicRegulonOnOffCall is a reference to a hash where the following keys are defined:
+	sample_name has a value which is a string
+	ar_id has a value which is a string
+	on_off_unknown has a value which is an int
+
+</pre>
+
+=end html
+
+=begin text
+
+$genome_id is a string
+$sample_ids is a reference to a list where each element is a string
+$atomic_regulons is a reference to a list where each element is an AtomicRegulon
+$feature_calls is a reference to a list where each element is a FeatureOnOffCall
+$ar_calls is a reference to a list where each element is an AtomicRegulonOnOffCall
+AtomicRegulon is a reference to a hash where the following keys are defined:
+	ar_id has a value which is a string
+	feature_ids has a value which is a reference to a list where each element is a string
+FeatureOnOffCall is a reference to a hash where the following keys are defined:
+	sample_name has a value which is a string
+	feature_id has a value which is a string
+	on_off_unknown has a value which is an int
+AtomicRegulonOnOffCall is a reference to a hash where the following keys are defined:
+	sample_name has a value which is a string
+	ar_id has a value which is a string
+	on_off_unknown has a value which is an int
+
+
+=end text
+
+=item Description
+
+compute atomic regulons for a genome from expression values in the expression service;
+requires input of list of sample_ids
+
+=back
+
+=cut
+
+sub compute_atomic_regulons_expressionServices
+{
+    my($self, @args) = @_;
+
+# Authentication: none
+
+    if ((my $n = @args) != 2)
+    {
+	Bio::KBase::Exceptions::ArgumentValidationError->throw(error =>
+							       "Invalid argument count for function compute_atomic_regulons_expressionServices (received $n, expecting 2)");
+    }
+    {
+	my($genome_id, $sample_ids) = @args;
+
+	my @_bad_arguments;
+        (!ref($genome_id)) or push(@_bad_arguments, "Invalid type for argument 1 \"genome_id\" (value was \"$genome_id\")");
+        (ref($sample_ids) eq 'ARRAY') or push(@_bad_arguments, "Invalid type for argument 2 \"sample_ids\" (value was \"$sample_ids\")");
+        if (@_bad_arguments) {
+	    my $msg = "Invalid arguments passed to compute_atomic_regulons_expressionServices:\n" . join("", map { "\t$_\n" } @_bad_arguments);
+	    Bio::KBase::Exceptions::ArgumentValidationError->throw(error => $msg,
+								   method_name => 'compute_atomic_regulons_expressionServices');
+	}
+    }
+
+    my $result = $self->{client}->call($self->{url}, {
+	method => "atomic_regulons.compute_atomic_regulons_expressionServices",
+	params => \@args,
+    });
+    if ($result) {
+	if ($result->is_error) {
+	    Bio::KBase::Exceptions::JSONRPC->throw(error => $result->error_message,
+					       code => $result->content->{error}->{code},
+					       method_name => 'compute_atomic_regulons_expressionServices',
+					       data => $result->content->{error}->{error} # JSON::RPC::ReturnObject only supports JSONRPC 1.1 or 1.O
+					      );
+	} else {
+	    return wantarray ? @{$result->result} : $result->result->[0];
+	}
+    } else {
+        Bio::KBase::Exceptions::HTTP->throw(error => "Error invoking method compute_atomic_regulons_expressionServices",
+					    status_line => $self->{client}->status_line,
+					    method_name => 'compute_atomic_regulons_expressionServices',
+				       );
+    }
+}
+
+
+
 sub version {
     my ($self) = @_;
     my $result = $self->{client}->call($self->{url}, {
@@ -279,16 +390,16 @@ sub version {
             Bio::KBase::Exceptions::JSONRPC->throw(
                 error => $result->error_message,
                 code => $result->content->{code},
-                method_name => 'compute_atomic_regulons_CDS',
+                method_name => 'compute_atomic_regulons_expressionServices',
             );
         } else {
             return wantarray ? @{$result->result} : $result->result->[0];
         }
     } else {
         Bio::KBase::Exceptions::HTTP->throw(
-            error => "Error invoking method compute_atomic_regulons_CDS",
+            error => "Error invoking method compute_atomic_regulons_expressionServices",
             status_line => $self->{client}->status_line,
-            method_name => 'compute_atomic_regulons_CDS',
+            method_name => 'compute_atomic_regulons_expressionServices',
         );
     }
 }

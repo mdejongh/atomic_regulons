@@ -233,6 +233,9 @@ class Application(object):
         self.rpc_service.add(impl_atomic_regulons.compute_atomic_regulons_CDS,
                              name='atomic_regulons.compute_atomic_regulons_CDS',
                              types=[basestring])
+        self.rpc_service.add(impl_atomic_regulons.compute_atomic_regulons_expressionServices,
+                             name='atomic_regulons.compute_atomic_regulons_expressionServices',
+                             types=[basestring, list])
 
     def __call__(self, environ, start_response):
         # Context object, equivalent to the perl impl CallContext

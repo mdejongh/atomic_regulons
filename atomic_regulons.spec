@@ -36,4 +36,8 @@ module atomic_regulons {
 
     /* compute atomic regulons for a genome from expression values in the CDS */
     funcdef compute_atomic_regulons_CDS(string genome_id) returns (list<AtomicRegulon> atomic_regulons, list<FeatureOnOffCall> feature_calls, list<AtomicRegulonOnOffCall> ar_calls);
+
+    /* compute atomic regulons for a genome from expression values in the expression service;
+       requires input of list of sample_ids */
+    funcdef compute_atomic_regulons_expressionServices(string genome_id, list<string> sample_ids) returns (list<AtomicRegulon> atomic_regulons, list<FeatureOnOffCall> feature_calls, list<AtomicRegulonOnOffCall> ar_calls);
 };
