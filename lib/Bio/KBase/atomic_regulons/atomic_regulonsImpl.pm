@@ -1,6 +1,7 @@
 package Bio::KBase::atomic_regulons::atomic_regulonsImpl;
 use strict;
 use Bio::KBase::Exceptions;
+use Clustering;
 # Use Semantic Versioning (2.0.0-rc.1)
 # http://semver.org 
 our $VERSION = "0.1.0";
@@ -309,6 +310,30 @@ sub cluster_objects {
     }
 
     return \%in_cluster;
+}
+
+# sub from ex_fillout_ar_data
+
+sub process_fillout {
+    my($ar,$set,$ar_counts,$peg_counts,$exp_vectors) = @_;
+    my $ret = {};
+    my $tot = 0;
+    my $ar_on_off = $ar_counts->{$ar};
+    if (! $ar_on_off) { $ar_on_off = [0,0,0] }
+    foreach my $peg (sort { &SeedUtils::by_fig_id($a,$b) } @$set)
+    {
+	my $peg_on_off = $peg_counts->{$peg};
+	if (! $peg_on_off) { $peg_on_off = [0,0,0] }
+	my @others = grep { $_ && ($_ ne $peg) } @$set;
+	my $tot = 0;
+	foreach my $other (@others)
+	{
+	    $tot += &correl_coeff($exp_vectors->{$peg}, $exp_vectors->{$other});
+	}
+	my $pcc = (@others > 0) ? sprintf("%0.3f",($tot/@others)) : 0 ;
+	$ret->{$ar}->{$peg} = $pcc;
+    }
+    return $ret;
 }
 
 #END_HEADER
@@ -685,7 +710,152 @@ END
     }
 
     my $merged_clusters = &cluster_objects($chromosomal_clusters, $ss_clusters, $same_profile_clusters);
-    print Dumper($merged_clusters);
+
+    # code from ex_split_atomic_regulons
+
+    my $max_dist = 0.25;
+    my $ar = 1;
+    my $split_clusters = {};
+
+    foreach my $mc (values %$merged_clusters)
+    {
+	my @pegs = @$mc;
+	my $ar_dist = {};
+	foreach my $peg1 (@pegs)
+	{
+	    foreach my $peg2 (@pegs)
+	    {
+		if ($peg1 ne $peg2 && ! defined $ar_dist->{$peg1}->{$peg2})
+		{
+		    my $pcc = &correl_coef($expression_values->{"expression_vectors"}->{$peg1},$expression_values->{"expression_vectors"}->{$peg2});
+		    my $d = (2 - ($pcc + 1)) / 2;
+		    $ar_dist->{$peg1}->{$peg2} = $d;
+		    $ar_dist->{$peg2}->{$peg1} = $d;
+		}
+	    }
+	}
+	my($clusters,undef) = &Clustering::cluster($ar_dist,$max_dist,"avg_dist");
+	foreach my $ar_pegs (@$clusters)
+	{
+	    if (@$ar_pegs > 1)
+	    {
+		$split_clusters->{$ar} = $ar_pegs;
+		$ar++;
+	    }
+	}
+    }
+
+    ## remove this
+    foreach my $ar (sort {$a<=>$b} keys %$split_clusters) 
+    {
+	push @$atomic_regulons, {"ar_id" => $ar, "feature_ids" => $split_clusters->{$ar}};
+    }
+
+    return($atomic_regulons, $feature_calls, $ar_calls);
+    ## end remove
+
+    # code from ex_set_on_off_for_atomic_regulons.pl
+
+    my %exp_ar_call;
+
+    foreach my $exp (sort keys(%peg_on_off_by_exp))
+    {
+	foreach my $ar (sort { $a <=> $b } keys(%$split_clusters))
+	{
+	    my $pegs = $split_clusters->{$ar};
+	    my $on = 0;
+	    my $off = 0;
+	    foreach my $peg (@$pegs)
+	    {
+		my $v = $peg_on_off_by_exp{$exp}->{$peg};
+		if    ($v == 1)   { $on++  }
+		elsif ($v == -1)  { $off++ }
+	    }
+	    my $call;
+	    if ($on > $off)
+	    {
+		$call = 1;
+	    }
+	    elsif ($on < $off)
+	    {
+		$call = -1;
+	    }
+	    else
+	    {
+		$call = 0;
+	    }
+	    $exp_ar_call{$exp}->{$ar} = $call;
+	}
+    }
+
+    # code from ex_adjust_peg_on_off
+
+    my %exp_peg_val;
+    foreach my $ar (keys(%$split_clusters))
+    {
+	my $pegs_in_ar = $split_clusters->{$ar};
+	foreach my $exp (keys(%exp_ar_call))
+	{
+	    my $ar_call = $exp_ar_call{$exp}->{$ar};
+	    foreach my $peg (@$pegs_in_ar)
+	    {
+		if ($exp_peg_val{$exp}->{$peg} == 0)
+		{
+		    $exp_peg_val{$exp}->{$peg} = $ar_call;
+		}
+	    }
+	}
+    }
+
+    # code from ex_fillout_ar_data
+
+    my %ar_counts;
+    foreach my $exp (keys %exp_ar_call)
+    {
+	foreach my $ar (keys %{$exp_ar_call{$exp}})
+	{
+	    my $v = $exp_ar_call{$exp}->{$ar};
+	    if (! defined($ar_counts{$ar})) { $ar_counts{$ar} = [0,0,0] }
+	    $ar_counts{$ar}->[$v+1] += 1;
+	}
+    }
+
+    my %peg_counts;
+    foreach my $exp (keys %exp_peg_val)
+    {
+	foreach my $peg (keys %{$exp_peg_val{$exp}})
+	{
+	    my $v = $exp_peg_val{$exp}->{$peg};
+	    if (! defined($peg_counts{$peg})) { $peg_counts{$peg} = [0,0,0] }
+	    $peg_counts{$peg}->[$v+1] += 1;
+	}
+    }
+
+    foreach my $ar (keys %$split_clusters) 
+    {
+	# Ross doesn't seem to be modifying the atomic regulons, just printing a new file
+	# &process_fillout($ar,$split_clusters->{ar},\%ar_counts,\%peg_counts,$expression_values->{"expression_vectors"});
+    }
+
+    # load up the return values
+    foreach my $ar (keys %$split_clusters) 
+    {
+	push @$atomic_regulons, {"ar_id" => $ar, "feature_ids" => $split_clusters->{$ar}};
+    }
+
+    foreach my $exp (keys %exp_peg_val) 
+    {
+	foreach my $peg (keys %{$exp_peg_val{$exp}}) {
+	    push @$feature_calls, {"sample_name" => $exp, "feature_id" => $peg, "on_off_unknown" => $exp_peg_val{$exp}->{$peg}};
+	}
+    }
+
+    foreach my $exp (keys %exp_ar_call) 
+    {
+	foreach my $ar (keys %{$exp_ar_call{$exp}}) {
+	    push @$ar_calls, {"sample_name" => $exp, "ar_id" => $ar, "on_off_unknown" => $exp_ar_call{$exp}->{$ar}};
+	}
+    }
 
     #END compute_atomic_regulons
     my @_bad_returns;
