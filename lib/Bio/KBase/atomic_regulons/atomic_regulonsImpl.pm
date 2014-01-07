@@ -1,7 +1,6 @@
 package Bio::KBase::atomic_regulons::atomic_regulonsImpl;
 use strict;
 use Bio::KBase::Exceptions;
-use Clustering;
 # Use Semantic Versioning (2.0.0-rc.1)
 # http://semver.org 
 our $VERSION = "0.1.0";
@@ -18,6 +17,7 @@ atomic_regulons
 
 #BEGIN_HEADER
 use SeedUtils;
+use Clustering;
 use gjoseqlib;
 use Data::Dumper;
 use Bio::KBase::CDMI::CDMIClient;
@@ -345,7 +345,7 @@ sub new
     };
     bless $self, $class;
     #BEGIN_CONSTRUCTOR
-mkdir("/mnt/tmp");
+
     #END_CONSTRUCTOR
 
     if ($self->can('_init_instance'))
@@ -377,7 +377,7 @@ $feature_calls is a reference to a list where each element is a FeatureOnOffCall
 $ar_calls is a reference to a list where each element is an AtomicRegulonOnOffCall
 ExpressionValues is a reference to a hash where the following keys are defined:
 	sample_names has a value which is a reference to a list where each element is a string
-	expression_vectors has a value which is a reference to a hash where the key is a string and the value is a reference to a list where each element is a string
+	expression_vectors has a value which is a reference to a hash where the key is a string and the value is a reference to a list where each element is a float
 AtomicRegulon is a reference to a hash where the following keys are defined:
 	ar_id has a value which is a string
 	feature_ids has a value which is a reference to a list where each element is a string
@@ -403,7 +403,7 @@ $feature_calls is a reference to a list where each element is a FeatureOnOffCall
 $ar_calls is a reference to a list where each element is an AtomicRegulonOnOffCall
 ExpressionValues is a reference to a hash where the following keys are defined:
 	sample_names has a value which is a reference to a list where each element is a string
-	expression_vectors has a value which is a reference to a hash where the key is a string and the value is a reference to a list where each element is a string
+	expression_vectors has a value which is a reference to a hash where the key is a string and the value is a reference to a list where each element is a float
 AtomicRegulon is a reference to a hash where the following keys are defined:
 	ar_id has a value which is a string
 	feature_ids has a value which is a reference to a list where each element is a string
@@ -451,9 +451,6 @@ sub compute_atomic_regulons
     $atomic_regulons = [];
     $feature_calls = [];
     $ar_calls = [];
-
-    # create a temporary directory for intermediate results
-#    my $dataD = tempdir ( DIR => "/mnt/tmp", CLEANUP => 0 );
 
     # get the features and roles for the genome
     my $csO = Bio::KBase::CDMI::CDMIClient->new_for_script();
@@ -745,15 +742,6 @@ END
 	}
     }
 
-    ## remove this
-    foreach my $ar (sort {$a<=>$b} keys %$split_clusters) 
-    {
-	push @$atomic_regulons, {"ar_id" => $ar, "feature_ids" => $split_clusters->{$ar}};
-    }
-
-    return($atomic_regulons, $feature_calls, $ar_calls);
-    ## end remove
-
     # code from ex_set_on_off_for_atomic_regulons.pl
 
     my %exp_ar_call;
@@ -950,7 +938,9 @@ a string
 
 =item Description
 
-table of expression levels for features in samples
+table of expression levels for features in samples;
+the order of the expression_levels should match the order of the sample_names
+and there should be no missing values
 
 
 =item Definition
@@ -960,7 +950,7 @@ table of expression levels for features in samples
 <pre>
 a reference to a hash where the following keys are defined:
 sample_names has a value which is a reference to a list where each element is a string
-expression_vectors has a value which is a reference to a hash where the key is a string and the value is a reference to a list where each element is a string
+expression_vectors has a value which is a reference to a hash where the key is a string and the value is a reference to a list where each element is a float
 
 </pre>
 
@@ -970,7 +960,7 @@ expression_vectors has a value which is a reference to a hash where the key is a
 
 a reference to a hash where the following keys are defined:
 sample_names has a value which is a reference to a list where each element is a string
-expression_vectors has a value which is a reference to a hash where the key is a string and the value is a reference to a list where each element is a string
+expression_vectors has a value which is a reference to a hash where the key is a string and the value is a reference to a list where each element is a float
 
 
 =end text
@@ -1024,7 +1014,7 @@ feature_ids has a value which is a reference to a list where each element is a s
 
 =item Description
 
-on/off/unknown call for a feature in one sample
+on (1) / off (-1) / unknown (0) call for a feature in one sample
 
 
 =item Definition
@@ -1063,7 +1053,7 @@ on_off_unknown has a value which is an int
 
 =item Description
 
-on/off/unknown call for an AtomicRegulon in one sample
+on (1) / off (-1) / unknown (0) call for an AtomicRegulon in one sample
 
 
 =item Definition
