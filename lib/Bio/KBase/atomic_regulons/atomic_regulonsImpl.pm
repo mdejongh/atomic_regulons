@@ -21,7 +21,6 @@ use Clustering;
 use gjoseqlib;
 use Data::Dumper;
 use Bio::KBase::CDMI::CDMIClient;
-use Bio::KBase::ExpressionServices::ExpressionServicesClient;
 use Bio::KBase::Utilities::ScriptThing;
 
 my $csO = Bio::KBase::CDMI::CDMIClient->new_for_script();
@@ -1051,62 +1050,7 @@ requires input of list of sample_ids
 
 =cut
 
-sub compute_atomic_regulons_expressionServices
-{
-    my $self = shift;
-    my($genome_id, $sample_ids) = @_;
 
-    my @_bad_arguments;
-    (!ref($genome_id)) or push(@_bad_arguments, "Invalid type for argument \"genome_id\" (value was \"$genome_id\")");
-    (ref($sample_ids) eq 'ARRAY') or push(@_bad_arguments, "Invalid type for argument \"sample_ids\" (value was \"$sample_ids\")");
-    if (@_bad_arguments) {
-	my $msg = "Invalid arguments passed to compute_atomic_regulons_expressionServices:\n" . join("", map { "\t$_\n" } @_bad_arguments);
-	Bio::KBase::Exceptions::ArgumentValidationError->throw(error => $msg,
-							       method_name => 'compute_atomic_regulons_expressionServices');
-    }
-
-    my $ctx = $Bio::KBase::atomic_regulons::Service::CallContext;
-    my($atomic_regulons, $feature_calls, $ar_calls);
-    #BEGIN compute_atomic_regulons_expressionServices
-
-    my $expression_values = {};
-    $expression_values->{"sample_names"} = $sample_ids;
-    $expression_values->{"expression_vectors"} = {}; # map from feature_id to list of float expression_levels
-    
-    my $client = Bio::KBase::ExpressionServices::ExpressionServicesClient->new("http://localhost:7075");
-    my $experimentInfo = $client->get_expression_data_by_samples_and_features($sample_ids,[]);
-
-    foreach my $sample (@$sample_ids) {
-	foreach my $fid (keys %{$experimentInfo->{$sample}}) {
-	    push @{$expression_values->{"expression_vectors"}->{$fid}}, $experimentInfo->{$sample}->{$fid};
-	}
-    }
-
-    # validate the data - every fid must have an expression level for every sample
-    my @bad_fids;
-    foreach my $fid (keys %{$expression_values->{"expression_vectors"}}) {
-	push @bad_fids, $fid if (@$sample_ids != @{$expression_values->{"expression_vectors"}->{$fid}});
-    }
-    print STDERR "Bad fids: @bad_fids\n" if @bad_fids > 0;
-
-    foreach my $fid (@bad_fids) {
-	delete $expression_values->{"expression_vectors"}->{$fid};
-    }
-
-    ($atomic_regulons, $feature_calls, $ar_calls) = internal_compute_ars($genome_id, $expression_values);
-
-    #END compute_atomic_regulons_expressionServices
-    my @_bad_returns;
-    (ref($atomic_regulons) eq 'ARRAY') or push(@_bad_returns, "Invalid type for return variable \"atomic_regulons\" (value was \"$atomic_regulons\")");
-    (ref($feature_calls) eq 'ARRAY') or push(@_bad_returns, "Invalid type for return variable \"feature_calls\" (value was \"$feature_calls\")");
-    (ref($ar_calls) eq 'ARRAY') or push(@_bad_returns, "Invalid type for return variable \"ar_calls\" (value was \"$ar_calls\")");
-    if (@_bad_returns) {
-	my $msg = "Invalid returns passed to compute_atomic_regulons_expressionServices:\n" . join("", map { "\t$_\n" } @_bad_returns);
-	Bio::KBase::Exceptions::ArgumentValidationError->throw(error => $msg,
-							       method_name => 'compute_atomic_regulons_expressionServices');
-    }
-    return($atomic_regulons, $feature_calls, $ar_calls);
-}
 
 
 
