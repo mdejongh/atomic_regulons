@@ -18,14 +18,19 @@ The RASTtk/KBase environment is necessary for access to the SEED Subsystems and 
 
 3) Clone atomic_regulons repository:
 
-`git clone https://github.com/jplfaria/atomic_regulons.git`
+```
+git clone https://github.com/jplfaria/atomic_regulons.git
+
+```
 
 4) In the RASTtk interactive shell run the following cmd in atomic_regulons/test-service : 
 
 e.g for Escherichia coli data:
 
-`perl -I ../lib testARserviceImpl.pl "kb|g.0" e.coli_expression.tab`
+```
+perl -I ../lib testARserviceImpl.pl "kb|g.0" e.coli_expression.tab
 
+```
 Parameters:
 - Genome ID: "kb|g.0"
 - Expression Data: e.coli_expression.tab (provided in /test-service)
