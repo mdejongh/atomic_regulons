@@ -37,6 +37,6 @@ Parameters:
 Note:
 Search for genome ID for genome of interest here: https://narrative.kbase.us/functional-site/#/search/?q=ecoli%20k12&category=genomes
 
-5) Output Atomic regulons are available at:
+5) Output Atomic Regulons are available at:
 
 /test-service/ar.out
