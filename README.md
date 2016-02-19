@@ -6,7 +6,7 @@ Here we propose a new algorithm for computing ARs, which combines many of the ad
 Code to compute Atomic Regulons can be found here: https://github.com/jplfaria/atomic_regulons/blob/master/lib/Bio/KBase/atomic_regulons/atomic_regulonsImpl.pm
 
 
-Test service:
+Test service
 -------------
 
 1) Download RASTtk 1.3.0 available at: https://github.com/TheSEED/RASTtk-Distribution/releases/
@@ -18,18 +18,17 @@ The RASTtk/KBase environment is necessary for access to the SEED Subsystems and 
 
 3) Clone atomic_regulons repository:
 
-git clone https://github.com/jplfaria/atomic_regulons.git
+`git clone https://github.com/jplfaria/atomic_regulons.git`
 
 4) In the RASTtk interactive shell run the following run the following cmd in atomic_regulons/test-service : 
 
 e.g for Escherichia coli data:
 
-parameters:
-- Genome ID: "kb|g.0"
-- Expression Data: "e.coli_expression.tab" (provided in test-service)
+`perl -I ../lib testARserviceImpl.pl "kb|g.0" "e.coli_expression.tab"`
 
-cmd:
-- perl -I ../lib testARserviceImpl.pl "kb|g.0" "e.coli_expression.tab"
+Parameters:
+- Genome ID: "kb|g.0"
+- Expression Data: "e.coli_expression.tab" (provided in /test-service)
 
 Note:
 Search for genome ID for genome of interest here: https://narrative.kbase.us/functional-site/#/search/?q=ecoli%20k12&category=genomes
