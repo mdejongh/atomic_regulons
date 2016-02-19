@@ -24,11 +24,12 @@ git clone https://github.com/jplfaria/atomic_regulons.git
 
 e.g for Escherichia coli data:
 
-perl -I ../lib testARserviceImpl.pl "kb|g.0" "e.coli_expression.tab"
-
 parameters:
 - Genome ID: "kb|g.0"
-- Expression Data: "e.coli_expression.tab"
+- Expression Data: "e.coli_expression.tab" (provided in test-service)
+
+cmd:
+- perl -I ../lib testARserviceImpl.pl "kb|g.0" "e.coli_expression.tab"
 
 Note:
 Search for genome ID for genome of interest here: https://narrative.kbase.us/functional-site/#/search/?q=ecoli%20k12&category=genomes
