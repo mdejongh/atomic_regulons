@@ -16,7 +16,7 @@ The RASTtk/KBase environment is necessary for access to the SEED Subsystems and 
 
 2) Launch RASTtk distribution to prompt the RASTtk interactive shell
 
-3) Clone atomic_regulons repository:
+3) Clone the atomic_regulons repository:
 
 ```
 git clone https://github.com/jplfaria/atomic_regulons.git
