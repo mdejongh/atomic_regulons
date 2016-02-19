@@ -1,9 +1,9 @@
 Computing Atomic Regulons
 ===============
 
-Here we propose a new algorithm for computing ARs, which combines many of the advantages of the existing data-driven approaches, but integrates new evidence types including gene context and functional relationships to more quickly converge on a complete set of biologically meaningful ARs. Our algorithm is unique from other approaches in that it begins by constructing draft ARs using a combination of operon predictions and SEED subsystem technology.
+Here we propose a new algorithm for computing Atomic Regulons (ARs), which combines many of the advantages of the existing data-driven approaches, but integrates new evidence types including gene context and functional relationships to more quickly converge on a complete set of biologically meaningful ARs. Our algorithm is unique from other approaches in that it begins by constructing draft ARs using a combination of operon predictions and SEED subsystem technology.
 
-Code to compute Atomic Regulons can be found here: https://github.com/jplfaria/atomic_regulons/blob/master/lib/Bio/KBase/atomic_regulons/atomic_regulonsImpl.pm
+Code to compute ARs can be found here: https://github.com/jplfaria/atomic_regulons/blob/master/lib/Bio/KBase/atomic_regulons/atomic_regulonsImpl.pm
 
 
 Test service
