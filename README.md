@@ -7,21 +7,28 @@ Code to compute Atomic Regulons can be found here: https://github.com/jplfaria/a
 
 
 Test service:
--------------
 
 1) Download RASTtk 1.3.0 available at: https://github.com/TheSEED/RASTtk-Distribution/releases/
 
+Note: 
 The RASTtk/KBase environment is necessary for access to the SEED Subsystems and Functional roles
 
 2) Launch RASTtk distribution to prompt the RASTtk interactive shell
-
-The RASTtk/KBase environment is necessary for access to the SEED Subsystems and Functional roles
 
 3) Clone atomic_regulons repository:
 
 git clone https://github.com/jplfaria/atomic_regulons.git
 
-4) In the RASTtk interactive shell run the following cmd:
+4) In the RASTtk interactive shell run the following run the following cmd in atomic_regulons/test-service : 
 
+e.g for Escherichia coli data:
 
+perl -I ../lib testARserviceImpl.pl "kb|g.0" "e.coli_expression.tab"
+
+parameters:
+- Genome ID: "kb|g.0"
+- Expression Data: "e.coli_expression.tab"
+
+Note:
+Search for genome ID for genome of interest here: https://narrative.kbase.us/functional-site/#/search/?q=ecoli%20k12&category=genomes
 
