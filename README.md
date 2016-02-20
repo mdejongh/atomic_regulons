@@ -39,4 +39,4 @@ Search for genome ID for genome of interest here: https://narrative.kbase.us/fun
 
 5) Output Atomic Regulons are available at:
 
-/test-service/ar.out
+/test-service/atomic_regulons.out

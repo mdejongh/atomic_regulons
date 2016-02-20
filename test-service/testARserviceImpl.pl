@@ -52,7 +52,7 @@ if ($BS) {
     close CP;
 }
 
-open(AR,">ar.out");
+open(AR,">atomic_regulons.out");
 foreach my $ar (sort { $a->{"ar_id"} <=> $b->{"ar_id"} } @$atomic_regulons) {
     my $ar_id = $ar->{"ar_id"};
     my @pegs;
