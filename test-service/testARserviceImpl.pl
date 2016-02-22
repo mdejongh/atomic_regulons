@@ -3,9 +3,9 @@ use strict;
 use Data::Dumper;
 use Bio::KBase::CDMI::CDMIClient;
 
-my $BS = 1; # flag to turn on processing of B. subtilis data
+my $BS = 0; # flag to turn on processing of B. subtilis data
 
-my $genome_id = "kb|g.20403"; # for MP
+my $genome_id = $ARGV[0];
 $genome_id = "kb|g.423" if $BS;
 
 my $csO = Bio::KBase::CDMI::CDMIClient->new_for_script();
@@ -22,8 +22,7 @@ foreach my $fid (keys %$sourceIdsH) {
 }
 
 my $table = {};
-
-open(MP,"mp.table") if ! $BS; # for MP
+open(MP,$ARGV[1]) if ! $BS; # for E.coli and MP
 open(MP,"bs.table.43") if $BS;
 
 my $line = <MP>;
@@ -53,7 +52,7 @@ if ($BS) {
     close CP;
 }
 
-open(AR,">ar.out");
+open(AR,">atomic_regulons.out");
 foreach my $ar (sort { $a->{"ar_id"} <=> $b->{"ar_id"} } @$atomic_regulons) {
     my $ar_id = $ar->{"ar_id"};
     my @pegs;
